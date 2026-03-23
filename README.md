@@ -2,6 +2,8 @@
 
 Central repository for Project Phoenix backtesting platform.
 
+See [docs/repository_conventions.md](docs/repository_conventions.md) for canonical repository ownership and placement rules.
+
 ## Repository Structure
 
 ```
