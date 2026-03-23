@@ -1,0 +1,10 @@
+# Local environment
+.env
+.env.local
+.env.*.local
+
+# Non-Git data and artifacts
+/data/**
+!/data/.gitkeep
+/artifacts/**
+!/artifacts/.gitkeep
