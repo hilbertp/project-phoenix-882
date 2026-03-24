@@ -1,0 +1,18 @@
+[tool.ruff]
+line-length = 88
+include = ["apps/api/**/*.py", "apps/worker/**/*.py"]
+extend-exclude = [
+  "apps/ui",
+  "artifacts",
+  "data",
+  "docs",
+  "infra",
+  "scripts",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
