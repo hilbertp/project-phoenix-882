@@ -14,11 +14,12 @@ services:
 
   worker:
     image: python:3.12-slim
-    working_dir: /workspace
+    working_dir: /workspace/apps/worker
     command: ["sh", "-c", "tail -f /dev/null"]
     depends_on:
       - postgres
     volumes:
+      - ../../apps/worker:/workspace/apps/worker
       - ../../data:/workspace/data
       - ../../artifacts:/workspace/artifacts
 
