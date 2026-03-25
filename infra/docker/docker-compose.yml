@@ -1,0 +1,25 @@
+name: phoenix-local
+
+services:
+  api:
+    image: python:3.12-slim
+    working_dir: /workspace
+    command: ["sh", "-c", "tail -f /dev/null"]
+    depends_on:
+      - postgres
+    volumes:
+      - ../../data:/workspace/data
+      - ../../artifacts:/workspace/artifacts
+
+  worker:
+    image: python:3.12-slim
+    working_dir: /workspace
+    command: ["sh", "-c", "tail -f /dev/null"]
+    depends_on:
+      - postgres
+    volumes:
+      - ../../data:/workspace/data
+      - ../../artifacts:/workspace/artifacts
+
+  postgres:
+    image: postgres:16-alpine
