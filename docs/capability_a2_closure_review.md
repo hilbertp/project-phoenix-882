@@ -21,7 +21,7 @@ A2 did not implement schema or migrations, DB init scripts, API features, worker
 ## Boundary Review Result
 
 - **Material A3 or later scope leakage:** none identified
-- **Noncritical deviations:** the smoke-check script depends on the Docker daemon being available and checks service shape rather than deeper readiness; this is acceptable for A2 and does not materially widen scope
+- **Noncritical deviations:** Compose `depends_on` currently provides startup ordering only, and the smoke-check script depends on the Docker daemon being available while checking running-container shape rather than deeper readiness; this is acceptable for A2 and does not materially widen scope
 
 ## Readiness for Next Capability
 
@@ -30,5 +30,6 @@ The repository is ready for the next capability. The local stack shape, persiste
 ## Carry-Forward Risks and Notes
 
 - API and worker containers still use placeholder hold commands and do not yet run real service processes
-- the smoke check verifies expected running services, not business behavior or deeper health semantics
+- `depends_on` expresses startup ordering only and should not be treated as a readiness guarantee
+- the smoke check verifies expected running containers, not business behavior or deeper service health semantics
 - local-only placeholder credentials remain documented and should not be treated as production values
