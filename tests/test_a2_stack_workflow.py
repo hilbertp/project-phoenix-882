@@ -11,24 +11,24 @@ STACK_UP_SCRIPT = REPO_ROOT / "scripts/stack_up.sh"
 STACK_DOWN_SCRIPT = REPO_ROOT / "scripts/stack_down.sh"
 STACK_SMOKE_CHECK_SCRIPT = REPO_ROOT / "scripts/stack_smoke_check.sh"
 COMPOSE_FILE = REPO_ROOT / "infra/docker/docker-compose.yml"
+DOCKER_INFO_TIMEOUT_SECONDS = 10
+SCRIPT_TIMEOUT_SECONDS = 30
+COMPOSE_TIMEOUT_SECONDS = 30
 
 
 class A2StackWorkflowTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls) -> None:
+    def setUp(self) -> None:
         if shutil.which("docker") is None:
-            raise unittest.SkipTest("docker is required to run the local stack workflow tests")
+            self.skipTest("docker is required to run the local stack workflow tests")
 
-        daemon_check = subprocess.run(
+        daemon_check = self._run_process(
             ["docker", "info"],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
+            timeout=DOCKER_INFO_TIMEOUT_SECONDS,
+            timeout_context="docker info availability check",
         )
         if daemon_check.returncode != 0:
-            raise unittest.SkipTest("docker daemon is not available for local stack workflow tests")
+            self.skipTest("docker daemon is not available for local stack workflow tests")
 
-    def setUp(self) -> None:
         self._run_script(STACK_DOWN_SCRIPT, check=False)
 
     def tearDown(self) -> None:
@@ -48,7 +48,7 @@ class A2StackWorkflowTests(unittest.TestCase):
         down_result = self._run_script(STACK_DOWN_SCRIPT)
         self.assertEqual(down_result.returncode, 0, down_result.stdout + down_result.stderr)
 
-        running_services = subprocess.run(
+        running_services = self._run_process(
             [
                 "docker",
                 "compose",
@@ -59,13 +59,37 @@ class A2StackWorkflowTests(unittest.TestCase):
                 "running",
                 "--services",
             ],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
+            timeout=COMPOSE_TIMEOUT_SECONDS,
+            timeout_context="post-shutdown running services check",
         )
         self.assertEqual(running_services.returncode, 0, running_services.stdout + running_services.stderr)
         self.assertEqual(running_services.stdout.strip(), "")
+
+    def _run_process(
+        self,
+        command: list[str],
+        *,
+        timeout: int,
+        timeout_context: str,
+    ) -> subprocess.CompletedProcess[str]:
+        try:
+            return subprocess.run(
+                command,
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as error:
+            stdout = error.stdout or ""
+            stderr = error.stderr or ""
+            self.fail(
+                f"Timed out after {timeout}s during {timeout_context}.\n"
+                f"Command: {' '.join(command)}\n"
+                f"stdout: {stdout}\n"
+                f"stderr: {stderr}"
+            )
 
     def _run_script(
         self,
@@ -73,12 +97,10 @@ class A2StackWorkflowTests(unittest.TestCase):
         *,
         check: bool = True,
     ) -> subprocess.CompletedProcess[str]:
-        result = subprocess.run(
+        result = self._run_process(
             [str(script_path)],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
+            timeout=SCRIPT_TIMEOUT_SECONDS,
+            timeout_context=f"script {script_path.name}",
         )
 
         if check and result.returncode != 0:

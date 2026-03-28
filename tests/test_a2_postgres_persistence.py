@@ -16,25 +16,25 @@ POSTGRES_SERVICE = "postgres"
 POSTGRES_DB = "phoenix"
 POSTGRES_USER = "phoenix"
 TEST_TABLE = "a2_s3_persistence_check"
+DOCKER_INFO_TIMEOUT_SECONDS = 10
+SCRIPT_TIMEOUT_SECONDS = 30
+COMPOSE_TIMEOUT_SECONDS = 30
+POSTGRES_READY_COMMAND_TIMEOUT_SECONDS = 10
 
 
 class A2PostgresPersistenceTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls) -> None:
+    def setUp(self) -> None:
         if shutil.which("docker") is None:
-            raise unittest.SkipTest("docker is required to run the PostgreSQL persistence test")
+            self.skipTest("docker is required to run the PostgreSQL persistence test")
 
-        daemon_check = subprocess.run(
+        daemon_check = self._run_process(
             ["docker", "info"],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
+            timeout=DOCKER_INFO_TIMEOUT_SECONDS,
+            timeout_context="docker info availability check",
         )
         if daemon_check.returncode != 0:
-            raise unittest.SkipTest("docker daemon is not available for the PostgreSQL persistence test")
+            self.skipTest("docker daemon is not available for the PostgreSQL persistence test")
 
-    def setUp(self) -> None:
         self._run_script(STACK_DOWN_SCRIPT, check=False)
 
     def tearDown(self) -> None:
@@ -58,7 +58,7 @@ class A2PostgresPersistenceTests(unittest.TestCase):
             f"{TEST_TABLE} (test_key, stored_value) VALUES ('{test_key}', '{stored_value}');"
         )
 
-        recreate_result = subprocess.run(
+        recreate_result = self._run_process(
             [
                 "docker",
                 "compose",
@@ -70,10 +70,8 @@ class A2PostgresPersistenceTests(unittest.TestCase):
                 "--no-deps",
                 POSTGRES_SERVICE,
             ],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
+            timeout=COMPOSE_TIMEOUT_SECONDS,
+            timeout_context="postgres service recreation",
         )
         self.assertEqual(recreate_result.returncode, 0, recreate_result.stdout + recreate_result.stderr)
 
@@ -89,7 +87,7 @@ class A2PostgresPersistenceTests(unittest.TestCase):
     def _wait_for_postgres_ready(self) -> None:
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
-            ready_result = subprocess.run(
+            ready_result = self._run_process(
                 [
                     "docker",
                     "compose",
@@ -104,10 +102,8 @@ class A2PostgresPersistenceTests(unittest.TestCase):
                     "-d",
                     POSTGRES_DB,
                 ],
-                cwd=REPO_ROOT,
-                capture_output=True,
-                text=True,
-                check=False,
+                timeout=POSTGRES_READY_COMMAND_TIMEOUT_SECONDS,
+                timeout_context="postgres readiness check",
             )
             if ready_result.returncode == 0:
                 return
@@ -116,7 +112,7 @@ class A2PostgresPersistenceTests(unittest.TestCase):
         self.fail("postgres did not become ready in time")
 
     def _run_psql(self, sql: str) -> subprocess.CompletedProcess[str]:
-        result = subprocess.run(
+        result = self._run_process(
             [
                 "docker",
                 "compose",
@@ -137,13 +133,37 @@ class A2PostgresPersistenceTests(unittest.TestCase):
                 "-c",
                 sql,
             ],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
+            timeout=COMPOSE_TIMEOUT_SECONDS,
+            timeout_context="postgres psql command",
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return result
+
+    def _run_process(
+        self,
+        command: list[str],
+        *,
+        timeout: int,
+        timeout_context: str,
+    ) -> subprocess.CompletedProcess[str]:
+        try:
+            return subprocess.run(
+                command,
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as error:
+            stdout = error.stdout or ""
+            stderr = error.stderr or ""
+            self.fail(
+                f"Timed out after {timeout}s during {timeout_context}.\n"
+                f"Command: {' '.join(command)}\n"
+                f"stdout: {stdout}\n"
+                f"stderr: {stderr}"
+            )
 
     def _run_script(
         self,
@@ -151,12 +171,10 @@ class A2PostgresPersistenceTests(unittest.TestCase):
         *,
         check: bool = True,
     ) -> subprocess.CompletedProcess[str]:
-        result = subprocess.run(
+        result = self._run_process(
             [str(script_path)],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
+            timeout=SCRIPT_TIMEOUT_SECONDS,
+            timeout_context=f"script {script_path.name}",
         )
 
         if check:
