@@ -18,12 +18,15 @@ body {
 .chart-truth-card {
   width: min(680px, 100%);
   margin: 0;
-  padding: 0;
   border: 1px solid rgba(33, 22, 13, 0.12);
   border-radius: 20px;
   background: rgba(255, 250, 243, 0.92);
   box-shadow: 0 20px 60px rgba(89, 60, 31, 0.12);
   overflow: hidden;
+}
+
+.chart-truth-details {
+  margin: 0;
 }
 
 .chart-truth-row {
@@ -51,10 +54,119 @@ body {
   line-height: 1.35;
 }
 
+.chart-truth-verdicts {
+  border-top: 1px solid rgba(33, 22, 13, 0.08);
+  padding: 22px 24px 24px;
+}
+
+.chart-truth-verdict-label {
+  margin: 0 0 12px;
+  font-size: 0.78rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #8c6842;
+}
+
+.chart-truth-verdict-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.chart-truth-verdict-button {
+  appearance: none;
+  border: 1px solid rgba(33, 22, 13, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #21160d;
+  cursor: pointer;
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 14px 16px;
+  text-transform: lowercase;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    transform 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.chart-truth-verdict-button:hover {
+  transform: translateY(-1px);
+}
+
+.chart-truth-verdict-button[aria-pressed="true"] {
+  background: #21160d;
+  border-color: #21160d;
+  box-shadow: 0 12px 24px rgba(33, 22, 13, 0.18);
+  color: #fff7ee;
+}
+
+.chart-truth-selected-verdict {
+  margin: 14px 0 0;
+  font-size: 0.95rem;
+  color: #5f4630;
+}
+
+.chart-truth-save-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.chart-truth-save-button {
+  appearance: none;
+  border: 1px solid #21160d;
+  border-radius: 999px;
+  background: #21160d;
+  color: #fff7ee;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+  padding: 12px 16px;
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.chart-truth-save-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(33, 22, 13, 0.18);
+}
+
+.chart-truth-save-button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.chart-truth-save-status {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #5f4630;
+}
+
 @media (max-width: 640px) {
   .chart-truth-row {
     grid-template-columns: 1fr;
     gap: 8px;
     padding: 18px;
+  }
+
+  .chart-truth-verdicts {
+    padding: 18px;
+  }
+
+  .chart-truth-verdict-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .chart-truth-save-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
   }
 }

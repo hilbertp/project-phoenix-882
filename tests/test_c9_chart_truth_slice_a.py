@@ -85,6 +85,8 @@ class ChartTruthSliceATests(unittest.TestCase):
 
                 self.assertEqual(api_state.requested_positions, [1])
                 self.assertEqual(api_state.sync_attempts, {"db1-fib-0001": 1})
+                verdict_buttons = driver.find_elements(By.CSS_SELECTOR, ".chart-truth-verdict-button")
+                self.assertEqual(len(verdict_buttons), 3)
                 self.assertFalse(driver.find_elements(By.ID, "sync-chart-button"))
                 self.assertFalse(driver.find_elements(By.ID, "good-enough-button"))
                 self.assertFalse(driver.find_elements(By.ID, "tradingview-status"))
@@ -93,6 +95,115 @@ class ChartTruthSliceATests(unittest.TestCase):
                         "return Boolean(window.__db1ChartTruthLastSync && window.__db1ChartTruthLastSync.render_verification && window.__db1ChartTruthLastSync.render_verification.verified);"
                     )
                 )
+            finally:
+                driver.quit()
+
+    def test_chart_truth_page_allows_selecting_exactly_one_verdict(self) -> None:
+        api_state = VerifiedChartTruthApiState()
+        with running_review_servers(api_state) as urls:
+            driver = _create_driver(urls.api_base_url)
+            try:
+                wait = WebDriverWait(driver, 60)
+                driver.get(urls.ui_url.replace("/index.html", "/chart-truth.html"))
+
+                body = wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+                wait.until(
+                    lambda browser: body.get_attribute("data-chart-truth-state") == "synced"
+                )
+
+                up_button = driver.find_element(By.ID, "chart-truth-verdict-up")
+                down_button = driver.find_element(By.ID, "chart-truth-verdict-down")
+                meh_button = driver.find_element(By.ID, "chart-truth-verdict-meh")
+                save_button = driver.find_element(By.ID, "chart-truth-save-verdict")
+                save_status = driver.find_element(By.ID, "chart-truth-save-status")
+                selected_copy = driver.find_element(By.ID, "chart-truth-selected-verdict")
+
+                self.assertEqual(selected_copy.text.strip(), "No verdict selected.")
+                self.assertEqual(body.get_attribute("data-chart-truth-verdict"), "")
+                self.assertEqual(body.get_attribute("data-chart-truth-saved-verdict"), "")
+                self.assertEqual(save_status.text.strip(), "No saved verdict.")
+                self.assertFalse(save_button.is_enabled())
+
+                down_button.click()
+                wait.until(
+                    lambda browser: body.get_attribute("data-chart-truth-verdict") == "down"
+                )
+                self.assertEqual(selected_copy.text.strip(), "Selected verdict: DOWN")
+                self.assertTrue(save_button.is_enabled())
+                self.assertEqual(up_button.get_attribute("aria-pressed"), "false")
+                self.assertEqual(down_button.get_attribute("aria-pressed"), "true")
+                self.assertEqual(meh_button.get_attribute("aria-pressed"), "false")
+
+                meh_button.click()
+                wait.until(
+                    lambda browser: body.get_attribute("data-chart-truth-verdict") == "meh"
+                )
+                self.assertEqual(selected_copy.text.strip(), "Selected verdict: MEH")
+                self.assertEqual(up_button.get_attribute("aria-pressed"), "false")
+                self.assertEqual(down_button.get_attribute("aria-pressed"), "false")
+                self.assertEqual(meh_button.get_attribute("aria-pressed"), "true")
+                self.assertTrue(save_button.is_enabled())
+                self.assertEqual(api_state.sync_attempts, {"db1-fib-0001": 1})
+            finally:
+                driver.quit()
+
+    def test_chart_truth_page_saves_selected_verdict_and_restores_it_after_reload(self) -> None:
+        api_state = VerifiedChartTruthApiState()
+        with running_review_servers(api_state) as urls:
+            driver = _create_driver(urls.api_base_url)
+            try:
+                wait = WebDriverWait(driver, 60)
+                driver.get(urls.ui_url.replace("/index.html", "/chart-truth.html"))
+
+                body = wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+                wait.until(
+                    lambda browser: body.get_attribute("data-chart-truth-state") == "synced"
+                )
+
+                verdict_button = driver.find_element(By.ID, "chart-truth-verdict-up")
+                save_button = driver.find_element(By.ID, "chart-truth-save-verdict")
+                save_status = driver.find_element(By.ID, "chart-truth-save-status")
+                selected_copy = driver.find_element(By.ID, "chart-truth-selected-verdict")
+
+                verdict_button.click()
+                wait.until(
+                    lambda browser: body.get_attribute("data-chart-truth-verdict") == "up"
+                )
+                save_button.click()
+
+                wait.until(
+                    lambda browser: body.get_attribute("data-chart-truth-saved-verdict") == "up"
+                )
+                self.assertEqual(selected_copy.text.strip(), "Selected verdict: UP")
+                self.assertEqual(save_status.text.strip(), "Saved verdict: UP")
+                self.assertFalse(save_button.is_enabled())
+
+                driver.refresh()
+
+                body = wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+                wait.until(
+                    lambda browser: body.get_attribute("data-chart-truth-state") == "synced"
+                )
+                wait.until(
+                    lambda browser: body.get_attribute("data-chart-truth-saved-verdict") == "up"
+                )
+
+                self.assertEqual(body.get_attribute("data-chart-truth-verdict"), "up")
+                self.assertEqual(
+                    driver.find_element(By.ID, "chart-truth-selected-verdict").text.strip(),
+                    "Selected verdict: UP",
+                )
+                self.assertEqual(
+                    driver.find_element(By.ID, "chart-truth-save-status").text.strip(),
+                    "Saved verdict: UP",
+                )
+                self.assertEqual(
+                    driver.find_element(By.ID, "chart-truth-verdict-up").get_attribute("aria-pressed"),
+                    "true",
+                )
+                self.assertFalse(driver.find_element(By.ID, "chart-truth-save-verdict").is_enabled())
+                self.assertEqual(api_state.requested_positions, [1, 1])
+                self.assertEqual(api_state.sync_attempts, {"db1-fib-0001": 2})
             finally:
                 driver.quit()
 
