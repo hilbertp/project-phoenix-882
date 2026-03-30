@@ -78,7 +78,8 @@ body {
 .hero-copy,
 .panel-subtext,
 .adjustment-copy,
-.pending-action {
+.pending-action,
+.review-lock-reason {
   margin: 12px 0 0;
   color: var(--muted);
   font-family: "Trebuchet MS", sans-serif;
@@ -167,6 +168,15 @@ body {
   margin: 0;
   color: var(--muted);
   font-family: "Trebuchet MS", sans-serif;
+}
+
+.sync-copy.is-error,
+.review-lock-reason.is-error {
+  color: var(--danger);
+}
+
+.review-lock-reason.is-ready {
+  color: var(--accent);
 }
 
 .summary-strip {
