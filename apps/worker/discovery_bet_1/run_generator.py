@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from dataclasses import asdict
+
 from apps.worker.discovery_bet_1.atr import calculate_atr14
-from apps.worker.discovery_bet_1.candle_input import load_candles
+from apps.worker.discovery_bet_1.candle_input import load_candle_input
 from apps.worker.discovery_bet_1.export import export_generation_artifacts
 from apps.worker.discovery_bet_1.fib_structures import build_fib_candidates
 from apps.worker.discovery_bet_1.lifecycle import materialize_fib_structures
@@ -26,7 +28,8 @@ def run_generation(
     contract: MarketContract = LOCKED_MARKET_CONTRACT,
 ) -> GenerationOutputs:
     validated_contract = validate_market_contract(contract)
-    candles = load_candles(input_path)
+    loaded_input = load_candle_input(input_path)
+    candles = loaded_input.candles
     atr_values = calculate_atr14(candles)
     pivots = detect_local_pivots(candles)
     candidates, rejected_anchors = build_fib_candidates(pivots, atr_values)
@@ -41,6 +44,7 @@ def run_generation(
         artifacts_dir=artifacts_dir,
         input_path=input_path,
         contract=validated_contract,
+        source_provenance=asdict(loaded_input.provenance),
         candle_count=len(candles),
         pivot_count=len(pivots),
         candidate_count=len(candidates),

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from apps.worker.discovery_bet_1.atr import calculate_atr14
 from apps.worker.discovery_bet_1.types import Candle
@@ -9,10 +9,10 @@ from apps.worker.discovery_bet_1.types import Candle
 
 class DB1Atr14Tests(unittest.TestCase):
     def test_calculate_atr14_matches_flat_true_range_series(self) -> None:
-        start = datetime(2026, 1, 1, tzinfo=UTC)
+        start = datetime(2026, 1, 1)
         candles = [
             Candle(
-                timestamp_utc=start + timedelta(hours=index),
+                source_timestamp=(start + timedelta(hours=index)).isoformat(),
                 open=100 + index,
                 high=105 + index,
                 low=95 + index,

@@ -243,7 +243,7 @@
     elements.parentAnchorKind.textContent = structure.parent_anchor_kind;
     elements.parentAnchorPrice.textContent = formatPrice(structure.parent_anchor_price);
     elements.parentAnchorTimestamp.textContent = formatTimestamp(
-      structure.parent_anchor_timestamp_utc
+      structure.parent_anchor_source_timestamp
     );
 
     elements.terminalExtremeKind.textContent = structure.terminal_extreme_kind;
@@ -251,7 +251,7 @@
       structure.terminal_extreme_price
     );
     elements.terminalExtremeTimestamp.textContent = formatTimestamp(
-      structure.terminal_extreme_timestamp_utc
+      structure.terminal_extreme_source_timestamp
     );
 
     elements.anchorRangeLow.textContent = formatPrice(structure.anchor_range_low);
@@ -299,18 +299,21 @@
     return {
       structure_id: currentStructure.structure_id,
       proposed_anchor_pair: {
-        parent_anchor_timestamp_utc: currentStructure.parent_anchor_timestamp_utc,
+        parent_anchor_source_timestamp:
+          currentStructure.parent_anchor_source_timestamp,
         parent_anchor_price: Number(currentStructure.parent_anchor_price),
-        terminal_extreme_timestamp_utc: currentStructure.terminal_extreme_timestamp_utc,
+        terminal_extreme_source_timestamp:
+          currentStructure.terminal_extreme_source_timestamp,
         terminal_extreme_price: Number(currentStructure.terminal_extreme_price),
       },
       review_outcome: action,
       adjusted_anchor_pair:
         action === "adjusted_accept"
           ? {
-              parent_anchor_timestamp_utc: elements.adjustedParentAnchorTimestamp.value,
+              parent_anchor_source_timestamp:
+                elements.adjustedParentAnchorTimestamp.value,
               parent_anchor_price: Number(elements.adjustedParentAnchorPrice.value),
-              terminal_extreme_timestamp_utc:
+              terminal_extreme_source_timestamp:
                 elements.adjustedTerminalExtremeTimestamp.value,
               terminal_extreme_price: Number(elements.adjustedTerminalExtremePrice.value),
             }
@@ -369,12 +372,12 @@
 
   function populateAdjustmentFields(structure) {
     elements.adjustedParentAnchorTimestamp.value =
-      structure.parent_anchor_timestamp_utc;
+      structure.parent_anchor_source_timestamp;
     elements.adjustedParentAnchorPrice.value = Number(
       structure.parent_anchor_price
     ).toFixed(2);
     elements.adjustedTerminalExtremeTimestamp.value =
-      structure.terminal_extreme_timestamp_utc;
+      structure.terminal_extreme_source_timestamp;
     elements.adjustedTerminalExtremePrice.value = Number(
       structure.terminal_extreme_price
     ).toFixed(2);
@@ -398,7 +401,7 @@
   }
 
   function formatTimestamp(value) {
-    return String(value).replace("T", " ").replace("+00:00", " UTC");
+    return String(value).replace("T", " ");
   }
 
   function formatShare(value) {

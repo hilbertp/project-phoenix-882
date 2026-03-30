@@ -5,9 +5,9 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class AnchorPair:
-    parent_anchor_timestamp_utc: str
+    parent_anchor_source_timestamp: str
     parent_anchor_price: float
-    terminal_extreme_timestamp_utc: str
+    terminal_extreme_source_timestamp: str
     terminal_extreme_price: float
 
 

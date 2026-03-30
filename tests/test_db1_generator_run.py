@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import unittest
@@ -35,9 +36,23 @@ class DB1GeneratorRunTests(unittest.TestCase):
             temp_path = Path(temp_dir)
             input_path = temp_path / "bitget_btcusdt_p_1h_last_3_months.csv"
             input_path.write_text(
-                "timestamp_utc,open,high,low,close,volume\n"
+                "source_timestamp,open,high,low,close,volume\n"
                 + "\n".join(
                     ",".join(str(value) for value in row) for row in rows
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            input_path.with_suffix(".provenance.json").write_text(
+                json.dumps(
+                    {
+                        "acquisition_timestamp_utc": "2026-03-30T15:00:00+00:00",
+                        "acquisition_operator_or_process": "tests.test_db1_generator_run",
+                        "acquisition_method": "fixture_source_write",
+                        "source_file_sha256": hashlib.sha256(input_path.read_bytes()).hexdigest(),
+                    },
+                    indent=2,
+                    sort_keys=True,
                 )
                 + "\n",
                 encoding="utf-8",
@@ -52,9 +67,15 @@ class DB1GeneratorRunTests(unittest.TestCase):
             structures_csv = outputs.structures_csv_path.read_text(encoding="utf-8")
 
         self.assertEqual(outputs.market_symbol, "BITGET:BTCUSDT.P")
+        self.assertEqual(manifest["artifact_schema_version"], "db1-source-truth-v1")
         self.assertEqual(manifest["market_contract"]["human_label"], "BTCUSDT.P on Bitget")
+        self.assertEqual(
+            manifest["source_provenance"]["acquisition_method"],
+            "fixture_source_write",
+        )
         self.assertGreaterEqual(outputs.accepted_structure_count, 1)
         self.assertIn("BITGET:BTCUSDT.P", structures_csv)
+        self.assertIn("parent_anchor_source_timestamp", structures_csv)
 
 
 if __name__ == "__main__":

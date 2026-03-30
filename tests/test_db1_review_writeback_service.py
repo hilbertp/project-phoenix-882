@@ -15,9 +15,9 @@ def _base_payload() -> dict[str, object]:
     return {
         "structure_id": "db1-fib-0002",
         "proposed_anchor_pair": {
-            "parent_anchor_timestamp_utc": "2026-01-01T05:00:00+00:00",
+            "parent_anchor_source_timestamp": "2026-01-01T05:00:00",
             "parent_anchor_price": 90.0,
-            "terminal_extreme_timestamp_utc": "2026-01-01T14:00:00+00:00",
+            "terminal_extreme_source_timestamp": "2026-01-01T14:00:00",
             "terminal_extreme_price": 130.0,
         },
         "review_outcome": "good_enough",
@@ -55,9 +55,9 @@ class DB1ReviewWritebackServiceTests(unittest.TestCase):
     def test_submit_review_rejects_adjusted_anchor_pair_for_non_adjusted_accept(self) -> None:
         payload = _base_payload()
         payload["adjusted_anchor_pair"] = {
-            "parent_anchor_timestamp_utc": "2026-01-01T06:00:00+00:00",
+            "parent_anchor_source_timestamp": "2026-01-01T06:00:00",
             "parent_anchor_price": 91.0,
-            "terminal_extreme_timestamp_utc": "2026-01-01T14:00:00+00:00",
+            "terminal_extreme_source_timestamp": "2026-01-01T14:00:00",
             "terminal_extreme_price": 130.0,
         }
 

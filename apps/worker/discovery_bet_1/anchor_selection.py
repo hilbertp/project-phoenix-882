@@ -89,17 +89,17 @@ def _build_rejection(
     selected: Pivot | None,
 ) -> RejectedAnchor:
     return RejectedAnchor(
-        terminal_extreme_timestamp_utc=terminal_extreme.timestamp_utc,
+        terminal_extreme_source_timestamp=terminal_extreme.source_timestamp,
         terminal_extreme_price=terminal_extreme.price,
         terminal_extreme_kind=terminal_extreme.kind,
-        candidate_anchor_timestamp_utc=candidate.timestamp_utc,
+        candidate_anchor_source_timestamp=candidate.source_timestamp,
         candidate_anchor_price=candidate.price,
         candidate_anchor_kind=candidate.kind,
         atr14_at_terminal=atr_at_terminal,
         distance_to_terminal=distance_to_terminal,
         eligibility_passed=eligibility_passed,
         rejection_reason=rejection_reason,
-        selected_anchor_timestamp_utc=(
-            selected.timestamp_utc if selected is not None else None
+        selected_anchor_source_timestamp=(
+            selected.source_timestamp if selected is not None else None
         ),
     )

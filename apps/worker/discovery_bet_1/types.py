@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 
@@ -18,7 +17,7 @@ class StructureDirection(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Candle:
-    timestamp_utc: datetime
+    source_timestamp: str
     open: float
     high: float
     low: float
@@ -29,7 +28,7 @@ class Candle:
 @dataclass(frozen=True, slots=True)
 class Pivot:
     index: int
-    timestamp_utc: datetime
+    source_timestamp: str
     kind: PivotKind
     price: float
     candle_low: float
@@ -38,17 +37,17 @@ class Pivot:
 
 @dataclass(frozen=True, slots=True)
 class RejectedAnchor:
-    terminal_extreme_timestamp_utc: datetime
+    terminal_extreme_source_timestamp: str
     terminal_extreme_price: float
     terminal_extreme_kind: PivotKind
-    candidate_anchor_timestamp_utc: datetime
+    candidate_anchor_source_timestamp: str
     candidate_anchor_price: float
     candidate_anchor_kind: PivotKind
     atr14_at_terminal: float | None
     distance_to_terminal: float | None
     eligibility_passed: bool
     rejection_reason: str
-    selected_anchor_timestamp_utc: datetime | None
+    selected_anchor_source_timestamp: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,19 +65,19 @@ class FibStructure:
     market_symbol: str
     timeframe: str
     direction: StructureDirection
-    parent_anchor_timestamp_utc: datetime
+    parent_anchor_source_timestamp: str
     parent_anchor_price: float
     parent_anchor_kind: PivotKind
-    terminal_extreme_timestamp_utc: datetime
+    terminal_extreme_source_timestamp: str
     terminal_extreme_price: float
     terminal_extreme_kind: PivotKind
     anchor_range_low: float
     anchor_range_high: float
-    activated_at_utc: datetime
-    invalidated_at_utc: datetime | None
+    activated_at_source_timestamp: str
+    invalidated_at_source_timestamp: str | None
     invalidation_reason: str | None
-    source_candle_start_utc: datetime
-    source_candle_end_utc: datetime
+    source_candle_start_timestamp: str
+    source_candle_end_timestamp: str
 
 
 @dataclass(frozen=True, slots=True)
