@@ -200,6 +200,64 @@ body {
   margin-bottom: 16px;
 }
 
+.session-confidence-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.session-context-card,
+.session-audit-card {
+  padding: 20px;
+}
+
+.compact-detail-list {
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.compact-detail-list div {
+  padding-bottom: 8px;
+}
+
+.session-trail-block {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.session-trail-list {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+
+.session-trail-item,
+.session-trail-empty {
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+
+.session-trail-empty {
+  color: var(--muted);
+  font-family: "Trebuchet MS", sans-serif;
+}
+
+.session-trail-line {
+  margin: 0;
+  font-family: "Trebuchet MS", sans-serif;
+}
+
+.session-trail-line + .session-trail-line {
+  margin-top: 6px;
+  color: var(--muted);
+}
+
 .review-summary-card {
   padding: 20px;
 }
@@ -457,9 +515,14 @@ body {
   .hero,
   .toolbar,
   .sync-banner,
+  .session-confidence-strip,
   .actions-header,
   .summary-header {
     flex-direction: column;
+  }
+
+  .session-confidence-strip {
+    grid-template-columns: 1fr;
   }
 
   .structure-grid {

@@ -56,6 +56,57 @@
         <p id="tradingview-status" class="sync-copy">Waiting to sync current structure.</p>
       </section>
 
+      <section class="session-confidence-strip">
+        <article class="summary-card session-context-card">
+          <p class="card-label">Session Context</p>
+          <h2>Why this structure is active now</h2>
+          <dl class="detail-list compact-detail-list">
+            <div>
+              <dt>Current sequence position</dt>
+              <dd id="session-sequence-position">1 / 1</dd>
+            </div>
+            <div>
+              <dt>Previous action result</dt>
+              <dd id="session-previous-action">No submission recorded in this session yet.</dd>
+            </div>
+            <div>
+              <dt>Next active judgment target</dt>
+              <dd id="session-next-target">db1-fib-0001</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article class="summary-card session-audit-card">
+          <p class="card-label">Latest Recorded Submission</p>
+          <h2 id="latest-submission-heading">No local submission yet</h2>
+          <dl class="detail-list compact-detail-list">
+            <div>
+              <dt>Structure</dt>
+              <dd id="latest-submission-structure">-</dd>
+            </div>
+            <div>
+              <dt>Outcome</dt>
+              <dd id="latest-submission-outcome">-</dd>
+            </div>
+            <div>
+              <dt>Note</dt>
+              <dd id="latest-submission-note">-</dd>
+            </div>
+            <div>
+              <dt>Recorded at</dt>
+              <dd id="latest-submission-timestamp">-</dd>
+            </div>
+          </dl>
+
+          <div class="session-trail-block">
+            <p class="card-label">Current Session Trail</p>
+            <ul id="session-trail-list" class="session-trail-list">
+              <li class="session-trail-empty">No local submissions recorded in this session yet.</li>
+            </ul>
+          </div>
+        </article>
+      </section>
+
       <section class="summary-strip">
         <article class="summary-card review-summary-card">
           <div class="summary-header">

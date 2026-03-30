@@ -128,6 +128,7 @@ class FakeReviewApiState:
         self.fail_first_sync_for = fail_first_sync_for or set()
         self.sync_attempts: dict[str, int] = {}
         self.submissions: list[dict[str, object]] = []
+        self._submission_counter = 0
         self.structures = [
             _structure_payload(
                 structure_id="db1-fib-0001",
@@ -178,10 +179,12 @@ class FakeReviewApiState:
 
     def submit(self, payload: dict[str, object]) -> dict[str, object]:
         self.submissions.append(payload)
+        self._submission_counter += 1
         return {
-            "status": "recorded",
+            "submission_id": f"db1-review-{self._submission_counter:06d}",
             "structure_id": payload.get("structure_id"),
             "review_outcome": payload.get("review_outcome"),
+            "recorded_at_utc": "2026-03-31T00:00:00+00:00",
         }
 
     def sync(self, payload: dict[str, object]) -> tuple[int, dict[str, object]]:
