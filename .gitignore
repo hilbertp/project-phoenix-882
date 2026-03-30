@@ -3,8 +3,16 @@
 .env.local
 .env.*.local
 
+# Python bytecode
+__pycache__/
+*.pyc
+
 # Non-Git data and artifacts
 /data/**
 !/data/.gitkeep
+!/data/discovery_bet_1/
+!/data/discovery_bet_1/README.md
 /artifacts/**
 !/artifacts/.gitkeep
+!/artifacts/discovery_bet_1/
+!/artifacts/discovery_bet_1/.gitkeep
