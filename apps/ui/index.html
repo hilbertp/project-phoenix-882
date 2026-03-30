@@ -145,6 +145,13 @@
           <p id="pending-action" class="pending-action">No action selected</p>
         </div>
 
+        <label class="adjustment-notes" for="review-note-input">Optional review note</label>
+        <textarea
+          id="review-note-input"
+          rows="3"
+          placeholder="Optional note for this submission"
+        ></textarea>
+
         <div class="action-buttons">
           <button id="good-enough-button" class="action-button approve" type="button">
             good_enough
@@ -166,13 +173,31 @@
             </p>
           </div>
           <label class="adjustment-notes" for="adjustment-note-input">
-            Minimal local note
+            Adjustment mode local note
           </label>
           <textarea
             id="adjustment-note-input"
             rows="3"
             placeholder="Local in-memory note for this review only"
           ></textarea>
+          <div class="adjustment-grid">
+            <label>
+              Adjusted parent anchor timestamp
+              <input id="adjusted-parent-anchor-timestamp" type="text" />
+            </label>
+            <label>
+              Adjusted parent anchor price
+              <input id="adjusted-parent-anchor-price" type="number" step="0.01" />
+            </label>
+            <label>
+              Adjusted terminal extreme timestamp
+              <input id="adjusted-terminal-extreme-timestamp" type="text" />
+            </label>
+            <label>
+              Adjusted terminal extreme price
+              <input id="adjusted-terminal-extreme-price" type="number" step="0.01" />
+            </label>
+          </div>
           <div class="adjustment-actions">
             <button id="cancel-adjustment-button" class="secondary-button" type="button">
               cancel adjustment

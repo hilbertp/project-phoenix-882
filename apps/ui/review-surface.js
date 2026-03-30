@@ -7,6 +7,8 @@
     adjustmentMode: false,
     pendingAction: null,
     adjustmentNote: "",
+    previousComparisonUsed: false,
+    lastSubmission: null,
   };
 
   const elements = {
@@ -37,11 +39,22 @@
     anchorRangeHigh: document.getElementById("anchor-range-high"),
     lifecycleState: document.getElementById("lifecycle-state"),
     pendingAction: document.getElementById("pending-action"),
+    reviewNoteInput: document.getElementById("review-note-input"),
     goodEnoughButton: document.getElementById("good-enough-button"),
     adjustedAcceptButton: document.getElementById("adjusted-accept-button"),
     flatoutWrongButton: document.getElementById("flatout-wrong-button"),
     adjustmentPanel: document.getElementById("adjustment-panel"),
     adjustmentNoteInput: document.getElementById("adjustment-note-input"),
+    adjustedParentAnchorTimestamp: document.getElementById(
+      "adjusted-parent-anchor-timestamp"
+    ),
+    adjustedParentAnchorPrice: document.getElementById("adjusted-parent-anchor-price"),
+    adjustedTerminalExtremeTimestamp: document.getElementById(
+      "adjusted-terminal-extreme-timestamp"
+    ),
+    adjustedTerminalExtremePrice: document.getElementById(
+      "adjusted-terminal-extreme-price"
+    ),
     cancelAdjustmentButton: document.getElementById("cancel-adjustment-button"),
     finaliseAdjustmentButton: document.getElementById("finalise-adjustment-button"),
     debugPayload: document.getElementById("debug-payload"),
@@ -63,6 +76,7 @@
         return;
       }
       state.viewing = "previous";
+      state.previousComparisonUsed = true;
       render();
     });
 
@@ -118,8 +132,12 @@
       state.viewing = "current";
       state.adjustmentMode = false;
       state.pendingAction = null;
+      state.previousComparisonUsed = false;
+      state.lastSubmission = null;
+      elements.reviewNoteInput.value = "";
       elements.adjustmentNoteInput.value = "";
       state.adjustmentNote = "";
+      populateAdjustmentFields(state.currentPayload.current_structure);
       setStatus("Loaded " + state.currentPayload.progress.label + ".");
       render();
     } catch (error) {
@@ -127,18 +145,46 @@
     }
   }
 
-  function finaliseAction(action) {
+  async function finaliseAction(action) {
     state.pendingAction = action;
-    const nextPosition = state.currentPosition + 1;
-    if (nextPosition > state.totalStructures) {
-      state.adjustmentMode = false;
-      setStatus("Review complete. Final action: " + action + ".", "warning");
+    const submissionPayload = buildSubmissionPayload(action);
+    try {
+      const response = await fetch(API_BASE_URL + "/db1/review/submissions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(submissionPayload),
+      });
+
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(function () {
+          return { error: "Review submission failed." };
+        });
+        throw new Error(errorPayload.error || "Review submission failed.");
+      }
+
+      state.lastSubmission = await response.json();
+    } catch (error) {
+      state.pendingAction = null;
+      setStatus(String(error.message || error), "error");
       render();
       return;
     }
 
-    setStatus("Finalised " + action + ". Loading next structure...");
-    loadPosition(nextPosition);
+    const nextPosition = state.currentPosition + 1;
+    if (nextPosition > state.totalStructures) {
+      state.adjustmentMode = false;
+      setStatus(
+        "Review complete. Final action: " + action + ". Submission recorded.",
+        "warning"
+      );
+      render();
+      return;
+    }
+
+    setStatus("Finalised " + action + ". Submission recorded. Loading next structure...");
+    await loadPosition(nextPosition);
   }
 
   function render() {
@@ -209,11 +255,52 @@
         progress: state.currentPayload.progress,
         current_structure: state.currentPayload.current_structure,
         previous_structure: state.currentPayload.previous_structure,
+        previous_structure_comparison_used: state.previousComparisonUsed,
         adjustment_note: state.adjustmentNote,
+        last_submission: state.lastSubmission,
       },
       null,
       2
     );
+  }
+
+  function buildSubmissionPayload(action) {
+    const currentStructure = state.currentPayload.current_structure;
+    return {
+      structure_id: currentStructure.structure_id,
+      proposed_anchor_pair: {
+        parent_anchor_timestamp_utc: currentStructure.parent_anchor_timestamp_utc,
+        parent_anchor_price: Number(currentStructure.parent_anchor_price),
+        terminal_extreme_timestamp_utc: currentStructure.terminal_extreme_timestamp_utc,
+        terminal_extreme_price: Number(currentStructure.terminal_extreme_price),
+      },
+      review_outcome: action,
+      adjusted_anchor_pair:
+        action === "adjusted_accept"
+          ? {
+              parent_anchor_timestamp_utc: elements.adjustedParentAnchorTimestamp.value,
+              parent_anchor_price: Number(elements.adjustedParentAnchorPrice.value),
+              terminal_extreme_timestamp_utc:
+                elements.adjustedTerminalExtremeTimestamp.value,
+              terminal_extreme_price: Number(elements.adjustedTerminalExtremePrice.value),
+            }
+          : null,
+      note: elements.reviewNoteInput.value || null,
+      previous_structure_comparison_used: state.previousComparisonUsed,
+    };
+  }
+
+  function populateAdjustmentFields(structure) {
+    elements.adjustedParentAnchorTimestamp.value =
+      structure.parent_anchor_timestamp_utc;
+    elements.adjustedParentAnchorPrice.value = Number(
+      structure.parent_anchor_price
+    ).toFixed(2);
+    elements.adjustedTerminalExtremeTimestamp.value =
+      structure.terminal_extreme_timestamp_utc;
+    elements.adjustedTerminalExtremePrice.value = Number(
+      structure.terminal_extreme_price
+    ).toFixed(2);
   }
 
   function getVisibleStructure() {
