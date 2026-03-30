@@ -1,0 +1,60 @@
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top, rgba(196, 140, 76, 0.18), transparent 40%),
+    linear-gradient(180deg, #f7f1e7 0%, #efe4d2 100%);
+  color: #21160d;
+  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+}
+
+.chart-truth-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.chart-truth-card {
+  width: min(680px, 100%);
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(33, 22, 13, 0.12);
+  border-radius: 20px;
+  background: rgba(255, 250, 243, 0.92);
+  box-shadow: 0 20px 60px rgba(89, 60, 31, 0.12);
+  overflow: hidden;
+}
+
+.chart-truth-row {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 16px;
+  align-items: start;
+  padding: 22px 24px;
+}
+
+.chart-truth-row + .chart-truth-row {
+  border-top: 1px solid rgba(33, 22, 13, 0.08);
+}
+
+.chart-truth-row dt {
+  font-size: 0.78rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #8c6842;
+}
+
+.chart-truth-row dd {
+  margin: 0;
+  font-size: clamp(1rem, 2vw, 1.35rem);
+  line-height: 1.35;
+}
+
+@media (max-width: 640px) {
+  .chart-truth-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 18px;
+  }
+}
