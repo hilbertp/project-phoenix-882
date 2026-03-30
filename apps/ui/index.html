@@ -16,6 +16,13 @@
             Review one generated fib structure at a time for
             <span id="market-symbol">BITGET:BTCUSDT.P</span>.
           </p>
+          <div class="review-target-strip">
+            <p class="card-label">Current Judgment Target</p>
+            <p id="review-target-id" class="review-target-id">db1-fib-0001</p>
+            <p id="comparison-mode-copy" class="comparison-mode-copy">
+              Judging the current structure with the current view visible.
+            </p>
+          </div>
         </div>
         <div class="progress-panel">
           <p class="panel-label">Progress</p>
@@ -109,8 +116,11 @@
           </dl>
         </article>
 
-        <article class="summary-card accent-card">
+        <article id="comparison-card" class="summary-card accent-card comparison-card is-current-view">
           <p class="card-label">Current Versus Previous</p>
+          <p id="comparison-mode-pill" class="comparison-mode-pill is-current-view">
+            current view
+          </p>
           <h2 id="structure-id">db1-fib-0001</h2>
           <p class="direction-chip" id="direction-chip">up</p>
           <dl class="detail-list">
@@ -214,6 +224,11 @@
 
         <p id="review-lock-reason" class="review-lock-reason">
           Review actions are disabled until TradingView sync completes.
+        </p>
+
+        <p class="shortcut-hint">
+          Shortcuts: <strong>O</strong> okay, <strong>M</strong> meh, <strong>W</strong> wtf,
+          <strong>V</strong> current/previous, <strong>R</strong> sync or retry.
         </p>
       </section>
 
