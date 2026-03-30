@@ -10,8 +10,19 @@
     lastSubmission: null,
     chartReady: false,
     syncInFlight: false,
+    syncFailed: false,
+    syncFailureReason: "",
     tradingViewStatus: "Waiting to sync current structure.",
+    reviewNoteDraft: "",
   };
+
+  const VIEW_STATE_STORAGE_KEY = "db1-review-surface-state-v1";
+  const restoredViewState = readPersistedViewState();
+
+  state.currentPosition = restoredViewState.currentPosition || 1;
+  state.viewing = restoredViewState.viewing || "current";
+  state.previousComparisonUsed = Boolean(restoredViewState.previousComparisonUsed);
+  state.reviewNoteDraft = restoredViewState.reviewNote || "";
 
   const elements = {
     marketSymbol: document.getElementById("market-symbol"),
@@ -55,17 +66,19 @@
     goodEnoughButton: document.getElementById("good-enough-button"),
     adjustedAcceptButton: document.getElementById("adjusted-accept-button"),
     flatoutWrongButton: document.getElementById("flatout-wrong-button"),
+    reviewLockReason: document.getElementById("review-lock-reason"),
     debugPayload: document.getElementById("debug-payload"),
   };
 
   const API_BASE_URL = window.DB1_REVIEW_API_BASE_URL || "http://127.0.0.1:8000";
 
   wireEvents();
-  loadPosition(1);
+  loadPosition(state.currentPosition, { preserveViewState: true, preserveNote: true });
 
   function wireEvents() {
     elements.showCurrentButton.addEventListener("click", function () {
       state.viewing = "current";
+      persistViewState();
       render();
     });
 
@@ -75,11 +88,12 @@
       }
       state.viewing = "previous";
       state.previousComparisonUsed = true;
+      persistViewState();
       render();
     });
 
     elements.reloadButton.addEventListener("click", function () {
-      loadPosition(state.currentPosition);
+      loadPosition(state.currentPosition, { preserveViewState: true, preserveNote: true });
     });
 
     elements.syncChartButton.addEventListener("click", function () {
@@ -97,9 +111,16 @@
     elements.adjustedAcceptButton.addEventListener("click", function () {
       finaliseAction("adjusted_accept");
     });
+
+    elements.reviewNoteInput.addEventListener("input", function () {
+      state.reviewNoteDraft = elements.reviewNoteInput.value;
+      persistViewState();
+    });
   }
 
-  async function loadPosition(position) {
+  async function loadPosition(position, options) {
+    const preserveViewState = Boolean(options && options.preserveViewState);
+    const preserveNote = Boolean(options && options.preserveNote);
     setStatus("Loading review structure...");
     try {
       const response = await fetch(
@@ -114,12 +135,24 @@
       state.currentPayload = await response.json();
       state.currentPosition = state.currentPayload.progress.current_position;
       state.totalStructures = state.currentPayload.progress.total_structures;
-      state.viewing = "current";
+      if (!preserveViewState) {
+        state.viewing = "current";
+        state.previousComparisonUsed = false;
+      }
       state.pendingAction = null;
-      state.previousComparisonUsed = false;
       state.lastSubmission = null;
       state.chartReady = false;
-      elements.reviewNoteInput.value = "";
+      state.syncInFlight = false;
+      state.syncFailed = false;
+      state.syncFailureReason = "";
+      if (!preserveNote) {
+        state.reviewNoteDraft = "";
+      }
+      if (state.viewing === "previous" && !state.currentPayload.previous_structure) {
+        state.viewing = "current";
+      }
+      elements.reviewNoteInput.value = state.reviewNoteDraft;
+      persistViewState();
       await loadSummary();
       setStatus("Loaded " + state.currentPayload.progress.label + ".");
       render();
@@ -162,6 +195,7 @@
     }
 
     state.pendingAction = action;
+    persistViewState();
     const submissionPayload = buildSubmissionPayload(action);
     try {
       const response = await fetch(API_BASE_URL + "/db1/review/submissions", {
@@ -184,12 +218,15 @@
     } catch (error) {
       state.pendingAction = null;
       setStatus(String(error.message || error), "error");
+      persistViewState();
       render();
       return;
     }
 
     const nextPosition = state.currentPosition + 1;
     if (nextPosition > state.totalStructures) {
+      state.reviewNoteDraft = "";
+      persistViewState();
       setStatus(
         "Review complete. Final action: " + action + ". Submission recorded.",
         "warning"
@@ -199,7 +236,8 @@
     }
 
     setStatus("Finalised " + action + ". Submission recorded. Loading next structure...");
-    await loadPosition(nextPosition);
+    state.reviewNoteDraft = "";
+    await loadPosition(nextPosition, { preserveViewState: false, preserveNote: false });
   }
 
   function render() {
@@ -257,6 +295,13 @@
       ? "Pending action: " + state.pendingAction
       : "No action selected";
     elements.tradingViewStatus.textContent = state.tradingViewStatus;
+    elements.tradingViewStatus.classList.toggle("is-error", state.syncFailed);
+    elements.syncChartButton.textContent = state.syncFailed
+      ? "retry TradingView sync"
+      : state.syncInFlight
+        ? "syncing TradingView..."
+        : "sync TradingView";
+    renderReviewLockReason(reviewLocked);
 
     elements.showCurrentButton.classList.toggle(
       "is-active",
@@ -266,7 +311,7 @@
       "is-active",
       state.viewing === "previous"
     );
-    elements.showPreviousButton.disabled = !hasPrevious();
+    elements.showPreviousButton.disabled = !hasPrevious() || state.pendingAction !== null;
     elements.syncChartButton.disabled = state.syncInFlight || state.pendingAction !== null;
     elements.goodEnoughButton.disabled = reviewLocked;
     elements.adjustedAcceptButton.disabled = reviewLocked;
@@ -282,6 +327,9 @@
         tradingview_status: state.tradingViewStatus,
         chart_ready: state.chartReady,
         sync_in_flight: state.syncInFlight,
+        sync_failed: state.syncFailed,
+        sync_failure_reason: state.syncFailureReason,
+        review_note_draft: state.reviewNoteDraft,
         last_submission: state.lastSubmission,
       },
       null,
@@ -305,7 +353,7 @@
       proposed_anchor_pair: proposedAnchorPair,
       review_outcome: action,
       adjusted_anchor_pair: action === "adjusted_accept" ? proposedAnchorPair : null,
-      note: elements.reviewNoteInput.value || null,
+      note: state.reviewNoteDraft || null,
       previous_structure_comparison_used: state.previousComparisonUsed,
     };
   }
@@ -389,6 +437,8 @@
 
     state.chartReady = false;
     state.syncInFlight = true;
+    state.syncFailed = false;
+    state.syncFailureReason = "";
     state.tradingViewStatus = "Syncing the real TradingView chart...";
     render();
     try {
@@ -412,6 +462,7 @@
       const payload = await response.json();
       state.chartReady = true;
       state.syncInFlight = false;
+      state.syncFailed = false;
       state.tradingViewStatus =
         "TradingView synced for "
         + payload.structure_id
@@ -420,14 +471,89 @@
         + " "
         + payload.timeframe
         + ".";
+      persistViewState();
       render();
     } catch (error) {
       state.chartReady = false;
       state.syncInFlight = false;
+      state.syncFailed = true;
+      state.syncFailureReason = String(error.message || error);
       state.tradingViewStatus =
-        "TradingView sync failed. Use 'sync TradingView' to retry the current structure.";
+        "TradingView sync failed: "
+        + state.syncFailureReason
+        + " Use 'retry TradingView sync' to retry the current structure.";
       setStatus(state.tradingViewStatus, "error");
+      persistViewState();
       render();
+    }
+  }
+
+  function renderReviewLockReason(reviewLocked) {
+    const reason = getReviewLockReason(reviewLocked);
+    elements.reviewLockReason.textContent = reason;
+    elements.reviewLockReason.classList.toggle("is-error", reviewLocked);
+    elements.reviewLockReason.classList.toggle("is-ready", !reviewLocked);
+  }
+
+  function getReviewLockReason(reviewLocked) {
+    if (!reviewLocked) {
+      return "Review actions enabled for the current structure.";
+    }
+
+    if (state.pendingAction !== null) {
+      return "Review actions disabled: review submission is in progress.";
+    }
+
+    if (state.syncInFlight) {
+      return "Review actions disabled: TradingView sync is in progress for the current structure.";
+    }
+
+    if (state.syncFailed) {
+      return "Review actions disabled: " + state.syncFailureReason + " Retry TradingView sync for the current structure.";
+    }
+
+    return "Review actions disabled until TradingView sync completes for the current structure.";
+  }
+
+  function persistViewState() {
+    try {
+      window.sessionStorage.setItem(
+        VIEW_STATE_STORAGE_KEY,
+        JSON.stringify({
+          currentPosition: state.currentPosition,
+          viewing: state.viewing,
+          previousComparisonUsed: state.previousComparisonUsed,
+          reviewNote: state.reviewNoteDraft,
+        })
+      );
+    } catch (error) {
+      // Ignore storage failures; resilience falls back to in-memory state only.
+    }
+  }
+
+  function readPersistedViewState() {
+    try {
+      const rawValue = window.sessionStorage.getItem(VIEW_STATE_STORAGE_KEY);
+      if (!rawValue) {
+        return {};
+      }
+
+      const payload = JSON.parse(rawValue);
+      if (!payload || typeof payload !== "object") {
+        return {};
+      }
+
+      return {
+        currentPosition:
+          typeof payload.currentPosition === "number" && payload.currentPosition > 0
+            ? payload.currentPosition
+            : 1,
+        viewing: payload.viewing === "previous" ? "previous" : "current",
+        previousComparisonUsed: Boolean(payload.previousComparisonUsed),
+        reviewNote: typeof payload.reviewNote === "string" ? payload.reviewNote : "",
+      };
+    } catch (error) {
+      return {};
     }
   }
 
