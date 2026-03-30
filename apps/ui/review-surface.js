@@ -14,6 +14,7 @@
     syncFailureReason: "",
     tradingViewStatus: "Waiting to sync current structure.",
     reviewNoteDraft: "",
+    sessionTrail: [],
   };
 
   const VIEW_STATE_STORAGE_KEY = "db1-review-surface-state-v1";
@@ -23,6 +24,10 @@
   state.viewing = restoredViewState.viewing || "current";
   state.previousComparisonUsed = Boolean(restoredViewState.previousComparisonUsed);
   state.reviewNoteDraft = restoredViewState.reviewNote || "";
+  state.sessionTrail = Array.isArray(restoredViewState.sessionTrail)
+    ? restoredViewState.sessionTrail
+    : [];
+  state.lastSubmission = state.sessionTrail.length > 0 ? state.sessionTrail[0] : null;
 
   const elements = {
     marketSymbol: document.getElementById("market-symbol"),
@@ -35,6 +40,15 @@
     positionSummary: document.getElementById("position-summary"),
     statusBanner: document.getElementById("status-banner"),
     tradingViewStatus: document.getElementById("tradingview-status"),
+    sessionSequencePosition: document.getElementById("session-sequence-position"),
+    sessionPreviousAction: document.getElementById("session-previous-action"),
+    sessionNextTarget: document.getElementById("session-next-target"),
+    latestSubmissionHeading: document.getElementById("latest-submission-heading"),
+    latestSubmissionStructure: document.getElementById("latest-submission-structure"),
+    latestSubmissionOutcome: document.getElementById("latest-submission-outcome"),
+    latestSubmissionNote: document.getElementById("latest-submission-note"),
+    latestSubmissionTimestamp: document.getElementById("latest-submission-timestamp"),
+    sessionTrailList: document.getElementById("session-trail-list"),
     summaryReadinessHint: document.getElementById("summary-readiness-hint"),
     summaryTotalReviewed: document.getElementById("summary-total-reviewed"),
     summaryGoodEnough: document.getElementById("summary-good-enough"),
@@ -146,7 +160,7 @@
         state.previousComparisonUsed = false;
       }
       state.pendingAction = null;
-      state.lastSubmission = null;
+      state.lastSubmission = state.sessionTrail.length > 0 ? state.sessionTrail[0] : null;
       state.chartReady = false;
       state.syncInFlight = false;
       state.syncFailed = false;
@@ -219,7 +233,10 @@
         throw new Error(errorPayload.error || "Review submission failed.");
       }
 
-      state.lastSubmission = await response.json();
+      const responsePayload = await response.json();
+      state.lastSubmission = createSessionTrailEntry(responsePayload, state.reviewNoteDraft);
+      state.sessionTrail.unshift(state.lastSubmission);
+      persistViewState();
       await loadSummary();
     } catch (error) {
       state.pendingAction = null;
@@ -267,6 +284,9 @@
     elements.marketContextInstrument.textContent = market.instrument_label;
     elements.marketContextTimeframe.textContent = market.timeframe;
     elements.reviewTargetId.textContent = state.currentPayload.current_structure.structure_id;
+    elements.sessionSequencePosition.textContent =
+      progress.current_position + " / " + progress.total_structures;
+    elements.sessionNextTarget.textContent = state.currentPayload.current_structure.structure_id;
 
     elements.structureId.textContent = structure.structure_id;
     elements.directionChip.textContent = structure.direction;
@@ -308,6 +328,7 @@
       : state.syncInFlight
         ? "syncing TradingView..."
         : "sync TradingView";
+    renderSessionConfidence();
     renderComparisonState();
     renderReviewLockReason(reviewLocked);
 
@@ -413,6 +434,81 @@
       .join("");
   }
 
+  function renderSessionConfidence() {
+    renderLatestSubmission();
+    renderSessionTrail();
+    renderSessionContext();
+  }
+
+  function renderLatestSubmission() {
+    if (!state.lastSubmission) {
+      elements.latestSubmissionHeading.textContent = "No local submission yet";
+      elements.latestSubmissionStructure.textContent = "-";
+      elements.latestSubmissionOutcome.textContent = "-";
+      elements.latestSubmissionNote.textContent = "-";
+      elements.latestSubmissionTimestamp.textContent = "-";
+      return;
+    }
+
+    elements.latestSubmissionHeading.textContent =
+      "Recorded " + formatOutcomeDisplay(state.lastSubmission.reviewOutcome) + " for "
+      + state.lastSubmission.structureId;
+    elements.latestSubmissionStructure.textContent = state.lastSubmission.structureId;
+    elements.latestSubmissionOutcome.textContent = formatOutcomeDisplay(
+      state.lastSubmission.reviewOutcome
+    );
+    elements.latestSubmissionNote.textContent = formatNoteDisplay(state.lastSubmission);
+    elements.latestSubmissionTimestamp.textContent = formatTimestamp(
+      state.lastSubmission.recordedAtUtc
+    );
+  }
+
+  function renderSessionTrail() {
+    if (state.sessionTrail.length === 0) {
+      elements.sessionTrailList.innerHTML =
+        '<li class="session-trail-empty">No local submissions recorded in this session yet.</li>';
+      return;
+    }
+
+    elements.sessionTrailList.innerHTML = state.sessionTrail
+      .slice(0, 5)
+      .map(function (entry) {
+        return (
+          '<li class="session-trail-item">'
+          + '<p class="session-trail-line"><strong>'
+          + entry.structureId
+          + '</strong> - '
+          + formatOutcomeDisplay(entry.reviewOutcome)
+          + '</p>'
+          + '<p class="session-trail-line">'
+          + formatNoteDisplay(entry)
+          + ' - '
+          + formatTimestamp(entry.recordedAtUtc)
+          + '</p>'
+          + '</li>'
+        );
+      })
+      .join("");
+  }
+
+  function renderSessionContext() {
+    if (!state.lastSubmission) {
+      elements.sessionPreviousAction.textContent =
+        "No submission recorded in this session yet.";
+      return;
+    }
+
+    elements.sessionPreviousAction.textContent =
+      formatOutcomeDisplay(state.lastSubmission.reviewOutcome)
+      + " submitted for "
+      + state.lastSubmission.structureId
+      + " ("
+      + formatNoteDisplay(state.lastSubmission)
+      + ") at "
+      + formatTimestamp(state.lastSubmission.recordedAtUtc)
+      + ".";
+  }
+
   function getVisibleStructure() {
     if (state.viewing === "previous" && hasPrevious()) {
       return state.currentPayload.previous_structure;
@@ -436,6 +532,26 @@
 
   function formatShare(value) {
     return (Number(value) * 100).toFixed(1) + "%";
+  }
+
+  function formatOutcomeDisplay(value) {
+    if (value === "good_enough") {
+      return "okay (good_enough)";
+    }
+    if (value === "adjusted_accept") {
+      return "meh (adjusted_accept)";
+    }
+    if (value === "flatout_wrong") {
+      return "wtf (flatout_wrong)";
+    }
+    return String(value);
+  }
+
+  function formatNoteDisplay(entry) {
+    if (entry.noteText) {
+      return 'note: "' + entry.noteText + '"';
+    }
+    return entry.noteState;
   }
 
   async function syncTradingViewCurrentStructure() {
@@ -631,6 +747,7 @@
           viewing: state.viewing,
           previousComparisonUsed: state.previousComparisonUsed,
           reviewNote: state.reviewNoteDraft,
+          sessionTrail: state.sessionTrail,
         })
       );
     } catch (error) {
@@ -658,10 +775,24 @@
         viewing: payload.viewing === "previous" ? "previous" : "current",
         previousComparisonUsed: Boolean(payload.previousComparisonUsed),
         reviewNote: typeof payload.reviewNote === "string" ? payload.reviewNote : "",
+        sessionTrail: Array.isArray(payload.sessionTrail) ? payload.sessionTrail : [],
       };
     } catch (error) {
       return {};
     }
+  }
+
+  function createSessionTrailEntry(responsePayload, noteDraft) {
+    const trimmedNote = typeof noteDraft === "string" ? noteDraft.trim() : "";
+
+    return {
+      submissionId: responsePayload.submission_id || "",
+      structureId: responsePayload.structure_id || "",
+      reviewOutcome: responsePayload.review_outcome || "",
+      recordedAtUtc: responsePayload.recorded_at_utc || "",
+      noteState: trimmedNote !== "" ? "note provided" : "no note",
+      noteText: trimmedNote,
+    };
   }
 
   function setStatus(message, tone) {
