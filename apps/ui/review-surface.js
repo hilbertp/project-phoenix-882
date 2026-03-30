@@ -47,6 +47,10 @@
     marketContextSymbol: document.getElementById("market-context-symbol"),
     marketContextInstrument: document.getElementById("market-context-instrument"),
     marketContextTimeframe: document.getElementById("market-context-timeframe"),
+    reviewTargetId: document.getElementById("review-target-id"),
+    comparisonModeCopy: document.getElementById("comparison-mode-copy"),
+    comparisonCard: document.getElementById("comparison-card"),
+    comparisonModePill: document.getElementById("comparison-mode-pill"),
     structureId: document.getElementById("structure-id"),
     directionChip: document.getElementById("direction-chip"),
     viewingLabel: document.getElementById("viewing-label"),
@@ -116,6 +120,8 @@
       state.reviewNoteDraft = elements.reviewNoteInput.value;
       persistViewState();
     });
+
+    document.addEventListener("keydown", handleKeyboardShortcut);
   }
 
   async function loadPosition(position, options) {
@@ -260,6 +266,7 @@
     elements.marketContextSymbol.textContent = market.tradingview_symbol;
     elements.marketContextInstrument.textContent = market.instrument_label;
     elements.marketContextTimeframe.textContent = market.timeframe;
+    elements.reviewTargetId.textContent = state.currentPayload.current_structure.structure_id;
 
     elements.structureId.textContent = structure.structure_id;
     elements.directionChip.textContent = structure.direction;
@@ -301,6 +308,7 @@
       : state.syncInFlight
         ? "syncing TradingView..."
         : "sync TradingView";
+    renderComparisonState();
     renderReviewLockReason(reviewLocked);
 
     elements.showCurrentButton.classList.toggle(
@@ -486,6 +494,105 @@
       persistViewState();
       render();
     }
+  }
+
+  function handleKeyboardShortcut(event) {
+    if (shouldIgnoreShortcutTarget(event.target) || event.defaultPrevented) {
+      return;
+    }
+
+    if (event.metaKey || event.ctrlKey || event.altKey) {
+      return;
+    }
+
+    const key = String(event.key || "").toLowerCase();
+    if (key === "") {
+      return;
+    }
+
+    if (key === "o") {
+      triggerShortcutAction(elements.goodEnoughButton, "good_enough");
+      event.preventDefault();
+      return;
+    }
+
+    if (key === "m") {
+      triggerShortcutAction(elements.adjustedAcceptButton, "adjusted_accept");
+      event.preventDefault();
+      return;
+    }
+
+    if (key === "w") {
+      triggerShortcutAction(elements.flatoutWrongButton, "flatout_wrong");
+      event.preventDefault();
+      return;
+    }
+
+    if (key === "v") {
+      toggleComparisonView();
+      event.preventDefault();
+      return;
+    }
+
+    if (key === "r") {
+      if (!elements.syncChartButton.disabled) {
+        syncTradingViewCurrentStructure();
+      }
+      event.preventDefault();
+    }
+  }
+
+  function triggerShortcutAction(button, action) {
+    if (button.disabled) {
+      return;
+    }
+
+    finaliseAction(action);
+  }
+
+  function toggleComparisonView() {
+    if (!state.currentPayload || state.pendingAction !== null || !hasPrevious()) {
+      return;
+    }
+
+    state.viewing = state.viewing === "current" ? "previous" : "current";
+    if (state.viewing === "previous") {
+      state.previousComparisonUsed = true;
+    }
+    persistViewState();
+    render();
+  }
+
+  function shouldIgnoreShortcutTarget(target) {
+    if (!target || !(target instanceof HTMLElement)) {
+      return false;
+    }
+
+    const tagName = target.tagName.toLowerCase();
+    return (
+      tagName === "input"
+      || tagName === "textarea"
+      || tagName === "select"
+      || target.isContentEditable
+    );
+  }
+
+  function renderComparisonState() {
+    const isPreviousView = state.viewing === "previous";
+    elements.comparisonModePill.textContent = isPreviousView
+      ? "previous comparison"
+      : "current view";
+    elements.comparisonModePill.classList.toggle("is-previous-view", isPreviousView);
+    elements.comparisonModePill.classList.toggle("is-current-view", !isPreviousView);
+    elements.comparisonCard.classList.toggle("is-previous-view", isPreviousView);
+    elements.comparisonCard.classList.toggle("is-current-view", !isPreviousView);
+    elements.comparisonModeCopy.textContent = isPreviousView
+      ? "Judging "
+        + state.currentPayload.current_structure.structure_id
+        + " while comparing the previous structure on screen."
+      : "Judging "
+        + state.currentPayload.current_structure.structure_id
+        + " with the current structure on screen.";
   }
 
   function renderReviewLockReason(reviewLocked) {

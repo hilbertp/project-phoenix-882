@@ -79,10 +79,27 @@ body {
 .panel-subtext,
 .adjustment-copy,
 .pending-action,
-.review-lock-reason {
+.review-lock-reason,
+.comparison-mode-copy,
+.shortcut-hint {
   margin: 12px 0 0;
   color: var(--muted);
   font-family: "Trebuchet MS", sans-serif;
+}
+
+.review-target-strip {
+  margin-top: 18px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(255, 250, 240, 0.92);
+  border: 1px solid var(--line);
+}
+
+.review-target-id {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
 }
 
 .progress-panel {
@@ -259,6 +276,30 @@ body {
 
 .accent-card {
   background: linear-gradient(160deg, rgba(15, 118, 110, 0.1), rgba(255, 242, 207, 0.9));
+}
+
+.comparison-card.is-previous-view {
+  background: linear-gradient(160deg, rgba(139, 94, 0, 0.16), rgba(255, 242, 207, 0.96));
+  border-color: var(--warning);
+}
+
+.comparison-mode-pill {
+  display: inline-flex;
+  margin: 2px 0 12px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: "Trebuchet MS", sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.comparison-mode-pill.is-previous-view {
+  background: var(--warning-soft);
+  color: var(--warning);
 }
 
 .wide-card {
