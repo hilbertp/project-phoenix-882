@@ -34,12 +34,20 @@
           </button>
         </div>
         <div class="position-group">
+          <button id="sync-chart-button" class="secondary-button" type="button">
+            sync TradingView
+          </button>
           <button id="reload-button" class="secondary-button" type="button">reload</button>
           <span id="position-summary">current: 1 / 1</span>
         </div>
       </section>
 
       <section id="status-banner" class="status-banner" aria-live="polite"></section>
+
+      <section class="sync-banner">
+        <p class="card-label">TradingView Review</p>
+        <p id="tradingview-status" class="sync-copy">Waiting to sync current structure.</p>
+      </section>
 
       <section class="summary-strip">
         <article class="summary-card review-summary-card">
@@ -194,59 +202,15 @@
 
         <div class="action-buttons">
           <button id="good-enough-button" class="action-button approve" type="button">
-            good_enough
+            okay
           </button>
           <button id="adjusted-accept-button" class="action-button adjust" type="button">
-            adjusted_accept
+            meh
           </button>
           <button id="flatout-wrong-button" class="action-button reject" type="button">
-            flatout_wrong
+            wtf
           </button>
         </div>
-
-        <section id="adjustment-panel" class="adjustment-panel is-hidden">
-          <div>
-            <p class="card-label">Adjustment Mode</p>
-            <h3>Confirm adjusted_accept without advancing early</h3>
-            <p class="adjustment-copy">
-              Stay on the current structure, review the key fields, then finalise when ready.
-            </p>
-          </div>
-          <label class="adjustment-notes" for="adjustment-note-input">
-            Adjustment mode local note
-          </label>
-          <textarea
-            id="adjustment-note-input"
-            rows="3"
-            placeholder="Local in-memory note for this review only"
-          ></textarea>
-          <div class="adjustment-grid">
-            <label>
-              Adjusted parent anchor timestamp
-              <input id="adjusted-parent-anchor-timestamp" type="text" />
-            </label>
-            <label>
-              Adjusted parent anchor price
-              <input id="adjusted-parent-anchor-price" type="number" step="0.01" />
-            </label>
-            <label>
-              Adjusted terminal extreme timestamp
-              <input id="adjusted-terminal-extreme-timestamp" type="text" />
-            </label>
-            <label>
-              Adjusted terminal extreme price
-              <input id="adjusted-terminal-extreme-price" type="number" step="0.01" />
-            </label>
-          </div>
-          <div class="adjustment-actions">
-            <button id="cancel-adjustment-button" class="secondary-button" type="button">
-              cancel adjustment
-            </button>
-            <button id="finalise-adjustment-button" class="action-button adjust" type="button">
-              finalise adjusted_accept
-            </button>
-          </div>
-        </section>
       </section>
 
       <details class="debug-panel">

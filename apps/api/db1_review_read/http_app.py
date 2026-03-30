@@ -6,7 +6,7 @@ from datetime import datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, cast
 from urllib.parse import parse_qs, urlparse
 
 from apps.api.db1_review_read.artifact_reader import (
@@ -20,10 +20,20 @@ from apps.api.db1_review_read.service import (
 )
 from apps.api.db1_review_summary.reader import ReviewSummaryReadError
 from apps.api.db1_review_summary.service import DB1ReviewSummaryService
+from apps.api.db1_review_tradingview.service import (
+    DB1TradingViewSyncService,
+    InvalidTradingViewSyncRequestError,
+    TradingViewSyncError,
+)
 from apps.api.db1_review_writeback.service import (
     DB1ReviewWritebackService,
     InvalidReviewSubmissionError,
 )
+
+
+class TradingViewSyncService(Protocol):
+    def sync_structure(self, payload: dict[str, object]) -> dict[str, object]:
+        ...
 
 
 def create_server(
@@ -31,10 +41,12 @@ def create_server(
     host: str,
     port: int,
     artifacts_dir: Path,
+    tradingview_sync_service: TradingViewSyncService | None = None,
 ) -> ThreadingHTTPServer:
     service = DB1ReviewReadService(artifacts_dir=artifacts_dir)
     summary_service = DB1ReviewSummaryService(artifacts_dir=artifacts_dir)
     writeback_service = DB1ReviewWritebackService(artifacts_dir=artifacts_dir)
+    sync_service = tradingview_sync_service or DB1TradingViewSyncService()
 
     class ReviewRequestHandler(BaseHTTPRequestHandler):
         def do_OPTIONS(self) -> None:
@@ -90,6 +102,23 @@ def create_server(
 
         def do_POST(self) -> None:
             parsed_url = urlparse(self.path)
+            if parsed_url.path == "/db1/review/tradingview/sync":
+                try:
+                    payload = _read_json_body(self)
+                    response_payload = sync_service.sync_structure(payload)
+                except InvalidTradingViewSyncRequestError as error:
+                    self._write_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                except TradingViewSyncError as error:
+                    self._write_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(error))
+                    return
+                except ValueError as error:
+                    self._write_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+
+                self._write_json(HTTPStatus.ACCEPTED, response_payload)
+                return
+
             if parsed_url.path != "/db1/review/submissions":
                 self._write_error(
                     HTTPStatus.NOT_FOUND,
@@ -167,7 +196,7 @@ def _parse_optional_int(
 
 def _serialize(value: object) -> Any:
     if is_dataclass(value):
-        return {key: _serialize(item) for key, item in asdict(value).items()}
+        return {key: _serialize(item) for key, item in asdict(cast(Any, value)).items()}
     if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, dict):
@@ -202,4 +231,5 @@ def parsed_path_supported(path: str) -> bool:
         "/db1/review/structures",
         "/db1/review/submissions",
         "/db1/review/summary",
+        "/db1/review/tradingview/sync",
     }
