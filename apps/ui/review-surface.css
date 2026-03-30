@@ -288,6 +288,29 @@ body {
   font: inherit;
 }
 
+#review-note-input,
+.adjustment-grid input {
+  width: 100%;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #fffdf6;
+  font: inherit;
+}
+
+.adjustment-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.adjustment-grid label {
+  display: grid;
+  gap: 8px;
+  font-family: "Trebuchet MS", sans-serif;
+}
+
 .debug-panel {
   margin-top: 18px;
   padding: 16px 18px;
@@ -315,6 +338,10 @@ body {
   }
 
   .range-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .adjustment-grid {
     grid-template-columns: 1fr;
   }
 }

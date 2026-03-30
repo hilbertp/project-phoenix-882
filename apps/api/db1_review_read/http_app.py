@@ -18,6 +18,10 @@ from apps.api.db1_review_read.service import (
     InvalidReviewRequestError,
     ReviewStructureNotFoundError,
 )
+from apps.api.db1_review_writeback.service import (
+    DB1ReviewWritebackService,
+    InvalidReviewSubmissionError,
+)
 
 
 def create_server(
@@ -27,8 +31,19 @@ def create_server(
     artifacts_dir: Path,
 ) -> ThreadingHTTPServer:
     service = DB1ReviewReadService(artifacts_dir=artifacts_dir)
+    writeback_service = DB1ReviewWritebackService(artifacts_dir=artifacts_dir)
 
     class ReviewRequestHandler(BaseHTTPRequestHandler):
+        def do_OPTIONS(self) -> None:
+            if parsed_path_supported(urlparse(self.path).path):
+                self.send_response(HTTPStatus.NO_CONTENT)
+                self._write_cors_headers()
+                self.end_headers()
+                return
+            self.send_response(HTTPStatus.NOT_FOUND)
+            self._write_cors_headers()
+            self.end_headers()
+
         def do_GET(self) -> None:
             parsed_url = urlparse(self.path)
             if parsed_url.path != "/db1/review/structures":
@@ -56,6 +71,27 @@ def create_server(
 
             self._write_json(HTTPStatus.OK, payload)
 
+        def do_POST(self) -> None:
+            parsed_url = urlparse(self.path)
+            if parsed_url.path != "/db1/review/submissions":
+                self._write_error(
+                    HTTPStatus.NOT_FOUND,
+                    "DB1 review write endpoint not found.",
+                )
+                return
+
+            try:
+                payload = _read_json_body(self)
+                response_payload = writeback_service.submit_review(payload)
+            except InvalidReviewSubmissionError as error:
+                self._write_error(HTTPStatus.BAD_REQUEST, str(error))
+                return
+            except ValueError as error:
+                self._write_error(HTTPStatus.BAD_REQUEST, str(error))
+                return
+
+            self._write_json(HTTPStatus.CREATED, response_payload)
+
         def log_message(self, format: str, *args: object) -> None:
             return
 
@@ -66,10 +102,15 @@ def create_server(
             body = json.dumps(_serialize(payload), sort_keys=True).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
+            self._write_cors_headers()
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+
+        def _write_cors_headers(self) -> None:
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 
     return ThreadingHTTPServer((host, port), ReviewRequestHandler)
 
@@ -117,3 +158,27 @@ def _serialize(value: object) -> Any:
     if isinstance(value, list):
         return [_serialize(item) for item in value]
     return value
+
+
+def _read_json_body(handler: BaseHTTPRequestHandler) -> dict[str, object]:
+    content_length = handler.headers.get("Content-Length")
+    if content_length is None:
+        raise ValueError("Content-Length header is required.")
+    try:
+        length = int(content_length)
+    except ValueError as error:
+        raise ValueError("Content-Length header must be an integer.") from error
+
+    raw_body = handler.rfile.read(length)
+    try:
+        payload = json.loads(raw_body.decode("utf-8"))
+    except json.JSONDecodeError as error:
+        raise ValueError("Request body must be valid JSON.") from error
+
+    if not isinstance(payload, dict):
+        raise ValueError("Request body must be a JSON object.")
+    return payload
+
+
+def parsed_path_supported(path: str) -> bool:
+    return path in {"/db1/review/structures", "/db1/review/submissions"}

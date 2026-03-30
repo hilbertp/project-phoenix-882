@@ -19,6 +19,7 @@ class DB1ReviewSurfaceAssetTests(unittest.TestCase):
         self.assertIn("good_enough", html)
         self.assertIn("adjusted_accept", html)
         self.assertIn("flatout_wrong", html)
+        self.assertIn("Optional review note", html)
         self.assertIn("Market Context", html)
         self.assertIn("Parent Anchor", html)
         self.assertIn("Terminal Extreme", html)
@@ -33,6 +34,8 @@ class DB1ReviewSurfaceAssetTests(unittest.TestCase):
         self.assertIn("currentPayload", script)
         self.assertIn("previous_structure", script)
         self.assertIn("loadPosition", script)
+        self.assertIn("/db1/review/submissions", script)
+        self.assertIn("previousComparisonUsed", script)
 
     def test_review_surface_stylesheet_exists(self) -> None:
         self.assertTrue(UI_STYLE.exists())
