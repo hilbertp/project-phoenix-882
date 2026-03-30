@@ -29,6 +29,21 @@ class DB1ReviewReadApiTests(unittest.TestCase):
         self.assertEqual(payload["previous_structure"]["structure_id"], "db1-fib-0001")
         self.assertEqual(payload["progress"]["label"], "structure 2 of 3")
 
+    def test_get_structures_endpoint_allows_cross_origin_ui_fetches(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            artifacts_dir = Path(temp_dir)
+            write_review_artifacts(artifacts_dir)
+            server, thread = _start_server(artifacts_dir)
+            try:
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/db1/review/structures?index=0"
+                ) as response:
+                    allow_origin = response.headers.get("Access-Control-Allow-Origin")
+            finally:
+                _stop_server(server, thread)
+
+        self.assertEqual(allow_origin, "*")
+
     def test_get_structures_endpoint_rejects_invalid_query_combinations(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             artifacts_dir = Path(temp_dir)

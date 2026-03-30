@@ -2,9 +2,194 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Phoenix UI</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DB1 Review Surface</title>
+    <link rel="stylesheet" href="./review-surface.css" />
   </head>
   <body>
-    <!-- UI application entry point. Implementation begins here when UI work is assigned. -->
+    <main class="review-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Discovery Bet 1</p>
+          <h1>Fib Review Surface</h1>
+          <p class="hero-copy">
+            Review one generated fib structure at a time for
+            <span id="market-symbol">BITGET:BTCUSDT.P</span>.
+          </p>
+        </div>
+        <div class="progress-panel">
+          <p class="panel-label">Progress</p>
+          <p class="progress-value" id="progress-label">structure 1 of 1</p>
+          <p class="panel-subtext" id="toggle-state">Viewing current structure</p>
+        </div>
+      </header>
+
+      <section class="toolbar">
+        <div class="toggle-group" role="group" aria-label="Structure toggle">
+          <button id="show-current-button" class="toggle-button is-active" type="button">
+            current
+          </button>
+          <button id="show-previous-button" class="toggle-button" type="button" disabled>
+            previous
+          </button>
+        </div>
+        <div class="position-group">
+          <button id="reload-button" class="secondary-button" type="button">reload</button>
+          <span id="position-summary">current: 1 / 1</span>
+        </div>
+      </section>
+
+      <section id="status-banner" class="status-banner" aria-live="polite"></section>
+
+      <section class="structure-grid">
+        <article class="summary-card">
+          <p class="card-label">Market Context</p>
+          <h2 id="market-context-title">BTCUSDT.P on Bitget</h2>
+          <dl class="detail-list">
+            <div>
+              <dt>TradingView symbol</dt>
+              <dd id="market-context-symbol">BITGET:BTCUSDT.P</dd>
+            </div>
+            <div>
+              <dt>Instrument</dt>
+              <dd id="market-context-instrument">BTCUSDTPERP PERPETUAL MIX CONTRACT</dd>
+            </div>
+            <div>
+              <dt>Timeframe</dt>
+              <dd id="market-context-timeframe">1H</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article class="summary-card accent-card">
+          <p class="card-label">Current Versus Previous</p>
+          <h2 id="structure-id">db1-fib-0001</h2>
+          <p class="direction-chip" id="direction-chip">up</p>
+          <dl class="detail-list">
+            <div>
+              <dt>Viewing</dt>
+              <dd id="viewing-label">current</dd>
+            </div>
+            <div>
+              <dt>Current position</dt>
+              <dd id="progress-position">1 / 1</dd>
+            </div>
+            <div>
+              <dt>Previous available</dt>
+              <dd id="previous-availability">no</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article class="summary-card">
+          <p class="card-label">Parent Anchor</p>
+          <dl class="detail-list">
+            <div>
+              <dt>Kind</dt>
+              <dd id="parent-anchor-kind">low</dd>
+            </div>
+            <div>
+              <dt>Price</dt>
+              <dd id="parent-anchor-price">-</dd>
+            </div>
+            <div>
+              <dt>Timestamp</dt>
+              <dd id="parent-anchor-timestamp">-</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article class="summary-card">
+          <p class="card-label">Terminal Extreme</p>
+          <dl class="detail-list">
+            <div>
+              <dt>Kind</dt>
+              <dd id="terminal-extreme-kind">high</dd>
+            </div>
+            <div>
+              <dt>Price</dt>
+              <dd id="terminal-extreme-price">-</dd>
+            </div>
+            <div>
+              <dt>Timestamp</dt>
+              <dd id="terminal-extreme-timestamp">-</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article class="summary-card wide-card">
+          <p class="card-label">Anchor Range</p>
+          <div class="range-strip">
+            <div>
+              <span class="range-label">Low</span>
+              <strong id="anchor-range-low">-</strong>
+            </div>
+            <div>
+              <span class="range-label">High</span>
+              <strong id="anchor-range-high">-</strong>
+            </div>
+            <div>
+              <span class="range-label">Lifecycle</span>
+              <strong id="lifecycle-state">active</strong>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="actions-panel">
+        <div class="actions-header">
+          <div>
+            <p class="card-label">Review Actions</p>
+            <h2>Choose the current outcome</h2>
+          </div>
+          <p id="pending-action" class="pending-action">No action selected</p>
+        </div>
+
+        <div class="action-buttons">
+          <button id="good-enough-button" class="action-button approve" type="button">
+            good_enough
+          </button>
+          <button id="adjusted-accept-button" class="action-button adjust" type="button">
+            adjusted_accept
+          </button>
+          <button id="flatout-wrong-button" class="action-button reject" type="button">
+            flatout_wrong
+          </button>
+        </div>
+
+        <section id="adjustment-panel" class="adjustment-panel is-hidden">
+          <div>
+            <p class="card-label">Adjustment Mode</p>
+            <h3>Confirm adjusted_accept without advancing early</h3>
+            <p class="adjustment-copy">
+              Stay on the current structure, review the key fields, then finalise when ready.
+            </p>
+          </div>
+          <label class="adjustment-notes" for="adjustment-note-input">
+            Minimal local note
+          </label>
+          <textarea
+            id="adjustment-note-input"
+            rows="3"
+            placeholder="Local in-memory note for this review only"
+          ></textarea>
+          <div class="adjustment-actions">
+            <button id="cancel-adjustment-button" class="secondary-button" type="button">
+              cancel adjustment
+            </button>
+            <button id="finalise-adjustment-button" class="action-button adjust" type="button">
+              finalise adjusted_accept
+            </button>
+          </div>
+        </section>
+      </section>
+
+      <details class="debug-panel">
+        <summary>Minimal debug payload</summary>
+        <pre id="debug-payload">Waiting for review payload...</pre>
+      </details>
+    </main>
+
+    <script src="./review-surface.js"></script>
   </body>
 </html>
