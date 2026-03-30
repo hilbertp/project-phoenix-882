@@ -157,6 +157,74 @@ body {
   border-color: var(--danger);
 }
 
+.summary-strip {
+  margin-bottom: 16px;
+}
+
+.review-summary-card {
+  padding: 20px;
+}
+
+.summary-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: center;
+}
+
+.summary-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.metric-tile,
+.summary-notes {
+  padding: 16px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid var(--line);
+}
+
+.readiness-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  text-transform: lowercase;
+  font-family: "Trebuchet MS", sans-serif;
+}
+
+.readiness-chip.is-continue {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.readiness-chip.is-kill {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.summary-notes {
+  margin-top: 16px;
+}
+
+.summary-notes.is-hidden {
+  display: none;
+}
+
+.reason-list {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-family: "Trebuchet MS", sans-serif;
+}
+
 .structure-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -325,12 +393,17 @@ body {
 @media (max-width: 780px) {
   .hero,
   .toolbar,
-  .actions-header {
+  .actions-header,
+  .summary-header {
     flex-direction: column;
   }
 
   .structure-grid {
     grid-template-columns: 1fr;
+  }
+
+  .summary-metrics {
+    grid-template-columns: 1fr 1fr;
   }
 
   .wide-card {

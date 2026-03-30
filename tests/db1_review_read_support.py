@@ -94,3 +94,67 @@ def write_review_artifacts(
         "\n".join(json.dumps(row, sort_keys=True) for row in structures) + "\n",
         encoding="utf-8",
     )
+
+
+def write_review_submissions(
+    artifacts_dir: Path,
+    *,
+    submissions: list[dict[str, object]] | None = None,
+) -> None:
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    payload_rows = submissions or [
+        {
+            "submission_id": "db1-review-000001",
+            "recorded_at_utc": "2026-03-30T01:00:00+00:00",
+            "structure_id": "db1-fib-0001",
+            "proposed_anchor_pair": {
+                "parent_anchor_timestamp_utc": "2026-01-01T02:00:00+00:00",
+                "parent_anchor_price": 120.0,
+                "terminal_extreme_timestamp_utc": "2026-01-01T10:00:00+00:00",
+                "terminal_extreme_price": 80.0,
+            },
+            "review_outcome": "good_enough",
+            "adjusted_anchor_pair": None,
+            "note": None,
+            "previous_structure_comparison_used": False,
+        },
+        {
+            "submission_id": "db1-review-000002",
+            "recorded_at_utc": "2026-03-30T01:05:00+00:00",
+            "structure_id": "db1-fib-0002",
+            "proposed_anchor_pair": {
+                "parent_anchor_timestamp_utc": "2026-01-01T05:00:00+00:00",
+                "parent_anchor_price": 90.0,
+                "terminal_extreme_timestamp_utc": "2026-01-01T14:00:00+00:00",
+                "terminal_extreme_price": 130.0,
+            },
+            "review_outcome": "adjusted_accept",
+            "adjusted_anchor_pair": {
+                "parent_anchor_timestamp_utc": "2026-01-01T06:00:00+00:00",
+                "parent_anchor_price": 91.0,
+                "terminal_extreme_timestamp_utc": "2026-01-01T14:00:00+00:00",
+                "terminal_extreme_price": 130.0,
+            },
+            "note": "nudged parent anchor",
+            "previous_structure_comparison_used": True,
+        },
+        {
+            "submission_id": "db1-review-000003",
+            "recorded_at_utc": "2026-03-30T01:10:00+00:00",
+            "structure_id": "db1-fib-0003",
+            "proposed_anchor_pair": {
+                "parent_anchor_timestamp_utc": "2026-01-01T08:00:00+00:00",
+                "parent_anchor_price": 95.0,
+                "terminal_extreme_timestamp_utc": "2026-01-01T16:00:00+00:00",
+                "terminal_extreme_price": 140.0,
+            },
+            "review_outcome": "flatout_wrong",
+            "adjusted_anchor_pair": None,
+            "note": "anchor pair was not usable",
+            "previous_structure_comparison_used": True,
+        },
+    ]
+    (artifacts_dir / "db1_review_submissions.jsonl").write_text(
+        "\n".join(json.dumps(row, sort_keys=True) for row in payload_rows) + "\n",
+        encoding="utf-8",
+    )

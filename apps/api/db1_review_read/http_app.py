@@ -18,6 +18,8 @@ from apps.api.db1_review_read.service import (
     InvalidReviewRequestError,
     ReviewStructureNotFoundError,
 )
+from apps.api.db1_review_summary.reader import ReviewSummaryReadError
+from apps.api.db1_review_summary.service import DB1ReviewSummaryService
 from apps.api.db1_review_writeback.service import (
     DB1ReviewWritebackService,
     InvalidReviewSubmissionError,
@@ -31,6 +33,7 @@ def create_server(
     artifacts_dir: Path,
 ) -> ThreadingHTTPServer:
     service = DB1ReviewReadService(artifacts_dir=artifacts_dir)
+    summary_service = DB1ReviewSummaryService(artifacts_dir=artifacts_dir)
     writeback_service = DB1ReviewWritebackService(artifacts_dir=artifacts_dir)
 
     class ReviewRequestHandler(BaseHTTPRequestHandler):
@@ -46,30 +49,44 @@ def create_server(
 
         def do_GET(self) -> None:
             parsed_url = urlparse(self.path)
-            if parsed_url.path != "/db1/review/structures":
-                self._write_error(
-                    HTTPStatus.NOT_FOUND,
-                    "DB1 review endpoint not found.",
-                )
+            if parsed_url.path == "/db1/review/structures":
+                try:
+                    query = _extract_query_values(parsed_url.query)
+                    payload = service.get_review_payload(**query)
+                except InvalidReviewRequestError as error:
+                    self._write_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                except ReviewStructureNotFoundError as error:
+                    self._write_error(HTTPStatus.NOT_FOUND, str(error))
+                    return
+                except ArtifactsUnavailableError as error:
+                    self._write_error(HTTPStatus.SERVICE_UNAVAILABLE, str(error))
+                    return
+                except ArtifactReadError as error:
+                    self._write_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(error))
+                    return
+
+                self._write_json(HTTPStatus.OK, payload)
                 return
 
-            try:
-                query = _extract_query_values(parsed_url.query)
-                payload = service.get_review_payload(**query)
-            except InvalidReviewRequestError as error:
-                self._write_error(HTTPStatus.BAD_REQUEST, str(error))
-                return
-            except ReviewStructureNotFoundError as error:
-                self._write_error(HTTPStatus.NOT_FOUND, str(error))
-                return
-            except ArtifactsUnavailableError as error:
-                self._write_error(HTTPStatus.SERVICE_UNAVAILABLE, str(error))
-                return
-            except ArtifactReadError as error:
-                self._write_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(error))
+            if parsed_url.path == "/db1/review/summary":
+                try:
+                    payload = summary_service.get_summary_payload()
+                except ArtifactsUnavailableError as error:
+                    self._write_error(HTTPStatus.SERVICE_UNAVAILABLE, str(error))
+                    return
+                except (ArtifactReadError, ReviewSummaryReadError) as error:
+                    self._write_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(error))
+                    return
+
+                self._write_json(HTTPStatus.OK, payload)
                 return
 
-            self._write_json(HTTPStatus.OK, payload)
+            self._write_error(
+                HTTPStatus.NOT_FOUND,
+                "DB1 review endpoint not found.",
+            )
+            return
 
         def do_POST(self) -> None:
             parsed_url = urlparse(self.path)
@@ -181,4 +198,8 @@ def _read_json_body(handler: BaseHTTPRequestHandler) -> dict[str, object]:
 
 
 def parsed_path_supported(path: str) -> bool:
-    return path in {"/db1/review/structures", "/db1/review/submissions"}
+    return path in {
+        "/db1/review/structures",
+        "/db1/review/submissions",
+        "/db1/review/summary",
+    }
