@@ -27,6 +27,7 @@ from apps.api.db1_review_tradingview.service import (
 )
 from apps.api.db1_review_writeback.service import (
     DB1ReviewWritebackService,
+    InvalidChartTruthVerdictError,
     InvalidReviewSubmissionError,
 )
 
@@ -81,6 +82,27 @@ def create_server(
                 self._write_json(HTTPStatus.OK, payload)
                 return
 
+            if parsed_url.path == "/db1/review/chart-truth-verdict":
+                query = parse_qs(parsed_url.query, keep_blank_values=True)
+                structure_id_values = query.get("structure_id")
+                if structure_id_values is None or len(structure_id_values) != 1:
+                    self._write_error(
+                        HTTPStatus.BAD_REQUEST,
+                        "structure_id must be provided exactly once.",
+                    )
+                    return
+
+                try:
+                    payload = writeback_service.get_chart_truth_verdict(
+                        structure_id_values[0]
+                    )
+                except InvalidChartTruthVerdictError as error:
+                    self._write_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+
+                self._write_json(HTTPStatus.OK, payload)
+                return
+
             if parsed_url.path == "/db1/review/summary":
                 try:
                     payload = summary_service.get_summary_payload()
@@ -117,6 +139,20 @@ def create_server(
                     return
 
                 self._write_json(HTTPStatus.ACCEPTED, response_payload)
+                return
+
+            if parsed_url.path == "/db1/review/chart-truth-verdict":
+                try:
+                    payload = _read_json_body(self)
+                    response_payload = writeback_service.save_chart_truth_verdict(payload)
+                except InvalidChartTruthVerdictError as error:
+                    self._write_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                except ValueError as error:
+                    self._write_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+
+                self._write_json(HTTPStatus.CREATED, response_payload)
                 return
 
             if parsed_url.path != "/db1/review/submissions":
@@ -228,6 +264,7 @@ def _read_json_body(handler: BaseHTTPRequestHandler) -> dict[str, object]:
 
 def parsed_path_supported(path: str) -> bool:
     return path in {
+        "/db1/review/chart-truth-verdict",
         "/db1/review/structures",
         "/db1/review/submissions",
         "/db1/review/summary",
