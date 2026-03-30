@@ -17,7 +17,7 @@ def detect_local_pivots(candles: list[Candle]) -> list[Pivot]:
             pivots.append(
                 Pivot(
                     index=index,
-                    timestamp_utc=candle.timestamp_utc,
+                    source_timestamp=candle.source_timestamp,
                     kind=PivotKind.HIGH,
                     price=candle.high,
                     candle_low=candle.low,
@@ -29,7 +29,7 @@ def detect_local_pivots(candles: list[Candle]) -> list[Pivot]:
             pivots.append(
                 Pivot(
                     index=index,
-                    timestamp_utc=candle.timestamp_utc,
+                    source_timestamp=candle.source_timestamp,
                     kind=PivotKind.LOW,
                     price=candle.low,
                     candle_low=candle.low,

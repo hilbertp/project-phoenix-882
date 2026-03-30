@@ -15,9 +15,9 @@ def _submission_payload() -> dict[str, object]:
     return {
         "structure_id": "db1-fib-0002",
         "proposed_anchor_pair": {
-            "parent_anchor_timestamp_utc": "2026-01-01T05:00:00+00:00",
+            "parent_anchor_source_timestamp": "2026-01-01T05:00:00",
             "parent_anchor_price": 90.0,
-            "terminal_extreme_timestamp_utc": "2026-01-01T14:00:00+00:00",
+            "terminal_extreme_source_timestamp": "2026-01-01T14:00:00",
             "terminal_extreme_price": 130.0,
         },
         "review_outcome": "flatout_wrong",

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import csv
 import json
-from dataclasses import asdict
-from datetime import datetime
+from dataclasses import asdict, is_dataclass
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence, cast
 
 from apps.worker.discovery_bet_1.market_contract import (
     MarketContract,
@@ -13,12 +13,15 @@ from apps.worker.discovery_bet_1.market_contract import (
 )
 from apps.worker.discovery_bet_1.types import FibStructure, RejectedAnchor
 
+ARTIFACT_SCHEMA_VERSION = "db1-source-truth-v1"
+
 
 def export_generation_artifacts(
     *,
     artifacts_dir: Path,
     input_path: Path,
     contract: MarketContract,
+    source_provenance: dict[str, str],
     candle_count: int,
     pivot_count: int,
     candidate_count: int,
@@ -33,8 +36,10 @@ def export_generation_artifacts(
     rejected_anchors_csv_path = artifacts_dir / "db1_rejected_anchors.csv"
 
     manifest = {
+        "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
         "market_contract": market_contract_as_dict(contract),
         "input_path": str(input_path),
+        "source_provenance": source_provenance,
         "candle_count": candle_count,
         "pivot_count": pivot_count,
         "candidate_count": candidate_count,
@@ -43,7 +48,7 @@ def export_generation_artifacts(
         "atr_period": 14,
         "atr_multiplier": 2.0,
         "pivot_rule": "2-left/2-right",
-        "generated_at_utc": datetime.now().astimezone().isoformat(),
+        "generated_at_utc": datetime.now(UTC).isoformat(),
     }
     manifest_path.write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -66,7 +71,7 @@ def export_generation_artifacts(
     )
 
 
-def _write_csv(path: Path, rows: list[object]) -> None:
+def _write_csv(path: Path, rows: Sequence[object]) -> None:
     if not rows:
         path.write_text("", encoding="utf-8")
         return
@@ -81,7 +86,9 @@ def _write_csv(path: Path, rows: list[object]) -> None:
 
 
 def _serialize_dataclass(value: object) -> dict[str, Any]:
-    raw_dict = asdict(value)
+    if not is_dataclass(value):
+        raise TypeError("Expected a dataclass value for DB1 artifact serialization.")
+    raw_dict = asdict(cast(Any, value))
     serialized: dict[str, Any] = {}
     for key, item in raw_dict.items():
         if isinstance(item, datetime):

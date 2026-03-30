@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from apps.worker.discovery_bet_1.pivots import detect_local_pivots
 from apps.worker.discovery_bet_1.types import Candle, PivotKind
@@ -9,12 +9,12 @@ from apps.worker.discovery_bet_1.types import Candle, PivotKind
 
 class DB1PivotDetectionTests(unittest.TestCase):
     def test_detect_local_pivots_uses_two_left_two_right_rule(self) -> None:
-        start = datetime(2026, 1, 1, tzinfo=UTC)
+        start = datetime(2026, 1, 1)
         highs = [10, 12, 15, 11, 9, 10, 11, 12, 13]
         lows = [8, 7, 6, 5, 3, 4, 5, 6, 7]
         candles = [
             Candle(
-                timestamp_utc=start + timedelta(hours=index),
+                source_timestamp=(start + timedelta(hours=index)).isoformat(),
                 open=highs[index] - 1,
                 high=highs[index],
                 low=lows[index],

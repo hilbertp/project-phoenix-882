@@ -27,25 +27,25 @@ def materialize_fib_structures(
                 market_symbol=LOCKED_MARKET_CONTRACT.tradingview_symbol,
                 timeframe=LOCKED_MARKET_CONTRACT.timeframe,
                 direction=candidate.direction,
-                parent_anchor_timestamp_utc=candidate.parent_anchor.timestamp_utc,
+                parent_anchor_source_timestamp=candidate.parent_anchor.source_timestamp,
                 parent_anchor_price=candidate.parent_anchor.price,
                 parent_anchor_kind=candidate.parent_anchor.kind,
-                terminal_extreme_timestamp_utc=candidate.terminal_extreme.timestamp_utc,
+                terminal_extreme_source_timestamp=candidate.terminal_extreme.source_timestamp,
                 terminal_extreme_price=candidate.terminal_extreme.price,
                 terminal_extreme_kind=candidate.terminal_extreme.kind,
                 anchor_range_low=candidate.anchor_range_low,
                 anchor_range_high=candidate.anchor_range_high,
-                activated_at_utc=candidate.terminal_extreme.timestamp_utc,
-                invalidated_at_utc=(
-                    candles[invalidation_index].timestamp_utc
+                activated_at_source_timestamp=candidate.terminal_extreme.source_timestamp,
+                invalidated_at_source_timestamp=(
+                    candles[invalidation_index].source_timestamp
                     if invalidation_index is not None
                     else None
                 ),
                 invalidation_reason=(
                     "anchor_range_breached" if invalidation_index is not None else None
                 ),
-                source_candle_start_utc=candles[0].timestamp_utc,
-                source_candle_end_utc=candles[-1].timestamp_utc,
+                source_candle_start_timestamp=candles[0].source_timestamp,
+                source_candle_end_timestamp=candles[-1].source_timestamp,
             )
         )
 

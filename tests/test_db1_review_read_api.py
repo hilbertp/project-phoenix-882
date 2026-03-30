@@ -28,6 +28,10 @@ class DB1ReviewReadApiTests(unittest.TestCase):
         self.assertEqual(payload["current_structure"]["structure_id"], "db1-fib-0002")
         self.assertEqual(payload["previous_structure"]["structure_id"], "db1-fib-0001")
         self.assertEqual(payload["progress"]["label"], "structure 2 of 3")
+        self.assertEqual(
+            payload["current_structure"]["terminal_extreme_source_timestamp"],
+            "2026-01-01T14:00:00",
+        )
 
     def test_get_structures_endpoint_allows_cross_origin_ui_fetches(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

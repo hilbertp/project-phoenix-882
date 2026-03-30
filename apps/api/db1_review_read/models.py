@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -14,9 +13,19 @@ class MarketContractSnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class SourceProvenanceSnapshot:
+    acquisition_timestamp_utc: str
+    acquisition_operator_or_process: str
+    acquisition_method: str
+    source_file_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
 class ReviewManifest:
+    artifact_schema_version: str
     market_contract: MarketContractSnapshot
     input_path: str
+    source_provenance: SourceProvenanceSnapshot
     candle_count: int
     pivot_count: int
     candidate_count: int
@@ -34,19 +43,19 @@ class ReviewStructure:
     market_symbol: str
     timeframe: str
     direction: str
-    parent_anchor_timestamp_utc: datetime
+    parent_anchor_source_timestamp: str
     parent_anchor_price: float
     parent_anchor_kind: str
-    terminal_extreme_timestamp_utc: datetime
+    terminal_extreme_source_timestamp: str
     terminal_extreme_price: float
     terminal_extreme_kind: str
     anchor_range_low: float
     anchor_range_high: float
-    activated_at_utc: datetime
-    invalidated_at_utc: datetime | None
+    activated_at_source_timestamp: str
+    invalidated_at_source_timestamp: str | None
     invalidation_reason: str | None
-    source_candle_start_utc: datetime
-    source_candle_end_utc: datetime
+    source_candle_start_timestamp: str
+    source_candle_end_timestamp: str
 
 
 @dataclass(frozen=True, slots=True)

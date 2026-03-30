@@ -18,9 +18,9 @@ class DB1ReviewWritebackStoreTests(unittest.TestCase):
                 recorded_at_utc="2026-03-30T00:00:00+00:00",
                 structure_id="db1-fib-0001",
                 proposed_anchor_pair=AnchorPair(
-                    parent_anchor_timestamp_utc="2026-01-01T02:00:00+00:00",
+                    parent_anchor_source_timestamp="2026-01-01T02:00:00",
                     parent_anchor_price=120.0,
-                    terminal_extreme_timestamp_utc="2026-01-01T10:00:00+00:00",
+                    terminal_extreme_source_timestamp="2026-01-01T10:00:00",
                     terminal_extreme_price=80.0,
                 ),
                 review_outcome="good_enough",

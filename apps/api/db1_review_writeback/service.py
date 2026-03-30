@@ -110,20 +110,20 @@ def _parse_anchor_pair(value: object, key: str) -> AnchorPair:
     if not isinstance(value, dict):
         raise InvalidReviewSubmissionError(f"{key} must be an object.")
     try:
-        parent_anchor_timestamp_utc = _require_anchor_string(
-            value, "parent_anchor_timestamp_utc"
+        parent_anchor_source_timestamp = _require_anchor_string(
+            value, "parent_anchor_source_timestamp"
         )
         parent_anchor_price = _require_anchor_float(value, "parent_anchor_price")
-        terminal_extreme_timestamp_utc = _require_anchor_string(
-            value, "terminal_extreme_timestamp_utc"
+        terminal_extreme_source_timestamp = _require_anchor_string(
+            value, "terminal_extreme_source_timestamp"
         )
         terminal_extreme_price = _require_anchor_float(value, "terminal_extreme_price")
     except InvalidReviewSubmissionError as error:
         raise InvalidReviewSubmissionError(f"{key}: {error}") from error
     return AnchorPair(
-        parent_anchor_timestamp_utc=parent_anchor_timestamp_utc,
+        parent_anchor_source_timestamp=parent_anchor_source_timestamp,
         parent_anchor_price=parent_anchor_price,
-        terminal_extreme_timestamp_utc=terminal_extreme_timestamp_utc,
+        terminal_extreme_source_timestamp=terminal_extreme_source_timestamp,
         terminal_extreme_price=terminal_extreme_price,
     )
 
