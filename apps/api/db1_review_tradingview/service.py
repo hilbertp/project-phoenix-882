@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
+import math
 from pathlib import Path
 from threading import Lock
 import time
@@ -29,10 +31,13 @@ class TradingViewMarketContract:
 @dataclass(frozen=True, slots=True)
 class TradingViewReviewStructure:
     structure_id: str
+    direction: str
     parent_anchor_source_timestamp: str
     parent_anchor_price: float
+    parent_anchor_kind: str
     terminal_extreme_source_timestamp: str
     terminal_extreme_price: float
+    terminal_extreme_kind: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,40 +138,84 @@ class DB1TradingViewSyncService:
             """
 const marketContract = arguments[0];
 const reviewStructure = arguments[1];
+const chartInterval = arguments[2];
 const c = window._exposed_chartWidgetCollection;
 if (!c) {
   throw new Error('TradingView chart widget collection is unavailable.');
 }
 const model = c._activeChartWidgetModel.value();
-if (String(model.mainSeries().interval()) !== '60') {
-  throw new Error('TradingView chart did not apply the 1H interval.');
+const chartModel = model.model();
+const pane = model.panes()[0];
+const ownerSource = pane.mainDataSource ? pane.mainDataSource() : model.mainSeries();
+if (String(model.mainSeries().interval()) !== chartInterval) {
+    throw new Error('TradingView chart did not apply the required interval.');
 }
 const bars = model.mainSeries().data();
-const firstBar = bars.first();
-if (!firstBar) {
+const barRows = [];
+bars.each((index, value) => {
+    barRows.push({ index, epochSeconds: value[0] });
+});
+if (barRows.length === 0) {
   throw new Error('TradingView hourly bar data is unavailable.');
 }
-const firstEpoch = firstBar.value[0];
-const firstIndex = firstBar.index;
-function indexForSourceTimestamp(sourceTimestamp) {
+function resolvePoint(sourceTimestamp, price) {
   const epochSeconds = Date.parse(sourceTimestamp + 'Z') / 1000;
-  const offsetHours = Math.round((epochSeconds - firstEpoch) / 3600);
-  return firstIndex + offsetHours;
+    const exact = barRows.find((row) => row.epochSeconds === epochSeconds);
+    if (!exact) {
+        throw new Error('TradingView chart does not contain an exact 1H bar for ' + sourceTimestamp + '.');
+    }
+    return {
+        index: exact.index,
+        interval: chartInterval,
+        offset: 0,
+        price,
+        time_t: epochSeconds,
+    };
 }
-const parentIndex = indexForSourceTimestamp(reviewStructure.parent_anchor_source_timestamp);
-const terminalIndex = indexForSourceTimestamp(reviewStructure.terminal_extreme_source_timestamp);
-const fromIndex = Math.min(parentIndex, terminalIndex) - 16;
-const toIndex = Math.max(parentIndex, terminalIndex) + 16;
+const parentPoint = resolvePoint(reviewStructure.parent_anchor_source_timestamp, reviewStructure.parent_anchor_price);
+const terminalPoint = resolvePoint(reviewStructure.terminal_extreme_source_timestamp, reviewStructure.terminal_extreme_price);
+const fromIndex = Math.min(parentPoint.index, terminalPoint.index) - 16;
+const toIndex = Math.max(parentPoint.index, terminalPoint.index) + 16;
 model.timeScale().zoomToBarsRange(fromIndex, toIndex);
+model.removeAllDrawingTools();
+const line = chartModel.createLineTool({
+        linetool: 'LineToolFibRetracement',
+        pane,
+        ownerSource,
+        point: {
+                index: parentPoint.index,
+                price: parentPoint.price,
+        },
+});
+const target = chartModel.lineBeingCreated() || line;
+chartModel.restoreLineToolState(
+        target,
+        {
+                type: 'LineToolFibRetracement',
+                points: [parentPoint, terminalPoint],
+                state: {
+                        symbol: marketContract.tradingview_symbol,
+                        interval: chartInterval,
+                        reverse: false,
+                        showCoeffs: true,
+                        showPrices: true,
+                        showText: true,
+                },
+                zorder: -15000,
+        },
+        false,
+);
+chartModel.finishLineTool(target);
 return {
   chartTitle: document.title,
   interval: String(model.mainSeries().interval()),
-  buttonText: (document.querySelector('button[aria-label="Change interval"]')?.innerText || '').trim(),
   marketSymbol: marketContract.tradingview_symbol,
   fromIndex,
   toIndex,
-  parentIndex,
-  terminalIndex,
+    parentPoint,
+    terminalPoint,
+    restoredState: target && target.state ? target.state() : null,
+    targetType: target && target.toolname ? target.toolname : null,
 };
 """,
             {
@@ -179,88 +228,19 @@ return {
                 "terminal_extreme_source_timestamp": request.review_structure.terminal_extreme_source_timestamp,
                 "terminal_extreme_price": request.review_structure.terminal_extreme_price,
             },
-        )
-        time.sleep(3)
-
-        driver.execute_script(
-            """
-const c = window._exposed_chartWidgetCollection;
-const model = c._activeChartWidgetModel.value();
-model.removeAllDrawingTools();
-"""
-        )
-        time.sleep(1)
-
-        wait.until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, 'button[aria-label="Fib retracement"]'))
-        ).click()
-        time.sleep(1)
-
-        placement_payload = driver.execute_script(
-            """
-const reviewStructure = arguments[0];
-const focusPayload = arguments[1];
-const c = window._exposed_chartWidgetCollection;
-const model = c._activeChartWidgetModel.value();
-const pane = model.panes()[0];
-const ts = model.timeScale();
-const ps = pane.defaultPriceScale();
-const firstValue = model.mainSeries().firstValue();
-const canvas = document.querySelectorAll('canvas')[1];
-if (!canvas) {
-  throw new Error('TradingView chart canvas is unavailable.');
-}
-const rect = canvas.getBoundingClientRect();
-const beforeIds = pane.dataSources().map((source) => source.id ? source.id() : null);
-window.__db1SyncBeforeIds = beforeIds;
-return {
-  p1: {
-    x: rect.left + ts.indexToCoordinate(focusPayload.parentIndex),
-    y: rect.top + ps.priceToCoordinate(reviewStructure.parent_anchor_price, firstValue),
-  },
-  p2: {
-    x: rect.left + ts.indexToCoordinate(focusPayload.terminalIndex),
-    y: rect.top + ps.priceToCoordinate(reviewStructure.terminal_extreme_price, firstValue),
-  },
-};
-""",
-            {
-                "parent_anchor_price": request.review_structure.parent_anchor_price,
-                "terminal_extreme_price": request.review_structure.terminal_extreme_price,
-            },
-            focus_payload,
-        )
-
-        for point in (placement_payload["p1"], placement_payload["p2"]):
-            self._click_point(driver, point)
-            time.sleep(1)
-
-        time.sleep(2)
-
-        result = driver.execute_script(
-            """
-const c = window._exposed_chartWidgetCollection;
-const model = c._activeChartWidgetModel.value();
-const pane = model.panes()[0];
-const beforeIds = window.__db1SyncBeforeIds || [];
-const all = pane.dataSources();
-const added = all.filter((source) => !beforeIds.includes(source.id ? source.id() : null));
-const target = added.length ? added[added.length - 1] : null;
-return {
-  addedCount: added.length,
-  interval: String(model.mainSeries().interval()),
-  buttonText: (document.querySelector('button[aria-label="Change interval"]')?.innerText || '').trim(),
-  chartTitle: document.title,
-  targetType: target && target.toolname ? target.toolname : null,
-};
-"""
+            _chart_interval_for_timeframe(request.market_contract.timeframe),
         )
         driver.execute_cdp_cmd("Page.bringToFront", {})
 
-        if result["targetType"] != "LineToolFibRetracement":
+        if focus_payload["targetType"] != "LineToolFibRetracement":
             raise TradingViewSyncError(
                 "TradingView sync did not create a fib retracement drawing on the chart."
             )
+
+        render_verification = _build_render_verification(
+            request=request,
+            restored_state=focus_payload["restoredState"],
+        )
 
         return {
             "status": "ok",
@@ -268,45 +248,10 @@ return {
             "market_symbol": request.market_contract.tradingview_symbol,
             "timeframe": request.market_contract.timeframe,
             "structure_id": request.review_structure.structure_id,
-            "placed_tool": result["targetType"],
-            "chart_title": result["chartTitle"],
+            "placed_tool": focus_payload["targetType"],
+            "chart_title": focus_payload["chartTitle"],
+            "render_verification": render_verification,
         }
-
-    def _click_point(self, driver: Any, point: dict[str, float]) -> None:
-        x = float(point["x"])
-        y = float(point["y"])
-        driver.execute_cdp_cmd(
-            "Input.dispatchMouseEvent",
-            {
-                "type": "mouseMoved",
-                "x": x,
-                "y": y,
-                "button": "none",
-                "pointerType": "mouse",
-            },
-        )
-        driver.execute_cdp_cmd(
-            "Input.dispatchMouseEvent",
-            {
-                "type": "mousePressed",
-                "x": x,
-                "y": y,
-                "button": "left",
-                "clickCount": 1,
-                "pointerType": "mouse",
-            },
-        )
-        driver.execute_cdp_cmd(
-            "Input.dispatchMouseEvent",
-            {
-                "type": "mouseReleased",
-                "x": x,
-                "y": y,
-                "button": "left",
-                "clickCount": 1,
-                "pointerType": "mouse",
-            },
-        )
 
 
 def _parse_sync_request(payload: dict[str, object]) -> TradingViewSyncRequest:
@@ -331,6 +276,7 @@ def _parse_sync_request(payload: dict[str, object]) -> TradingViewSyncRequest:
 
     review_structure = TradingViewReviewStructure(
         structure_id=_require_text(review_structure_raw, "structure_id", "review_structure"),
+        direction=_require_text(review_structure_raw, "direction", "review_structure"),
         parent_anchor_source_timestamp=_require_text(
             review_structure_raw,
             "parent_anchor_source_timestamp",
@@ -339,6 +285,9 @@ def _parse_sync_request(payload: dict[str, object]) -> TradingViewSyncRequest:
         parent_anchor_price=_require_float(
             review_structure_raw, "parent_anchor_price", "review_structure"
         ),
+        parent_anchor_kind=_require_text(
+            review_structure_raw, "parent_anchor_kind", "review_structure"
+        ),
         terminal_extreme_source_timestamp=_require_text(
             review_structure_raw,
             "terminal_extreme_source_timestamp",
@@ -346,6 +295,9 @@ def _parse_sync_request(payload: dict[str, object]) -> TradingViewSyncRequest:
         ),
         terminal_extreme_price=_require_float(
             review_structure_raw, "terminal_extreme_price", "review_structure"
+        ),
+        terminal_extreme_kind=_require_text(
+            review_structure_raw, "terminal_extreme_kind", "review_structure"
         ),
     )
 
@@ -369,3 +321,120 @@ def _require_float(payload: dict[str, object], key: str, scope: str) -> float:
     if not isinstance(value, (int, float)):
         raise InvalidTradingViewSyncRequestError(f"{scope}.{key} must be numeric.")
     return float(value)
+
+
+def _chart_interval_for_timeframe(timeframe: str) -> str:
+    if timeframe == "1H":
+        return "60"
+    raise TradingViewSyncError(
+        f"TradingView sync does not support chart interval mapping for {timeframe}."
+    )
+
+
+def _build_render_verification(
+    *,
+    request: TradingViewSyncRequest,
+    restored_state: dict[str, object] | None,
+) -> dict[str, object]:
+    if not isinstance(restored_state, dict):
+        raise TradingViewSyncError(
+            "TradingView sync could not read back the rendered fib state from the chart."
+        )
+
+    if restored_state.get("type") != "LineToolFibRetracement":
+        raise TradingViewSyncError(
+            "TradingView sync rendered a drawing, but it was not a fib retracement."
+        )
+
+    restored_points = restored_state.get("points")
+    if not isinstance(restored_points, list) or len(restored_points) != 2:
+        raise TradingViewSyncError(
+            "TradingView sync could not verify the rendered fib anchor pair on the chart."
+        )
+
+    expected_points = _build_expected_line_tool_points(request)
+    for expected_point, restored_point in zip(expected_points, restored_points):
+        if not isinstance(restored_point, dict):
+            raise TradingViewSyncError(
+                "TradingView sync returned an invalid rendered fib point from the chart."
+            )
+
+        expected_price = expected_point["price"]
+        if not isinstance(expected_price, (int, float)):
+            raise TradingViewSyncError(
+                "TradingView sync produced an invalid expected fib anchor price."
+            )
+
+        restored_time = restored_point.get("time_t")
+        restored_price = restored_point.get("price")
+        restored_interval = restored_point.get("interval")
+        if not isinstance(restored_time, (int, float)) or not isinstance(
+            restored_price, (int, float)
+        ):
+            raise TradingViewSyncError(
+                "TradingView sync returned an invalid rendered fib point payload from the chart."
+            )
+
+        if (
+            int(restored_time) != expected_point["time_t"]
+            or str(restored_interval) != expected_point["interval"]
+            or not math.isclose(
+                float(restored_price),
+                float(expected_price),
+                rel_tol=0.0,
+                abs_tol=1e-9,
+            )
+        ):
+            raise TradingViewSyncError(
+                "TradingView sync did not render the DB1 fib on the exact detected anchors."
+            )
+
+    return {
+        "verified": True,
+        "direction": request.review_structure.direction,
+        "parent_anchor_kind": request.review_structure.parent_anchor_kind,
+        "parent_anchor_source_timestamp": request.review_structure.parent_anchor_source_timestamp,
+        "parent_anchor_price": request.review_structure.parent_anchor_price,
+        "terminal_extreme_kind": request.review_structure.terminal_extreme_kind,
+        "terminal_extreme_source_timestamp": request.review_structure.terminal_extreme_source_timestamp,
+        "terminal_extreme_price": request.review_structure.terminal_extreme_price,
+    }
+
+
+def _build_expected_line_tool_points(
+    request: TradingViewSyncRequest,
+) -> list[dict[str, object]]:
+    chart_interval = _chart_interval_for_timeframe(request.market_contract.timeframe)
+    return [
+        {
+            "interval": chart_interval,
+            "offset": 0,
+            "price": request.review_structure.parent_anchor_price,
+            "time_t": _source_timestamp_to_epoch_seconds(
+                request.review_structure.parent_anchor_source_timestamp
+            ),
+        },
+        {
+            "interval": chart_interval,
+            "offset": 0,
+            "price": request.review_structure.terminal_extreme_price,
+            "time_t": _source_timestamp_to_epoch_seconds(
+                request.review_structure.terminal_extreme_source_timestamp
+            ),
+        },
+    ]
+
+
+def _source_timestamp_to_epoch_seconds(source_timestamp: str) -> int:
+    try:
+        parsed = datetime.fromisoformat(source_timestamp)
+    except ValueError as error:
+        raise TradingViewSyncError(
+            f"TradingView sync received an invalid source timestamp {source_timestamp}."
+        ) from error
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    else:
+        parsed = parsed.astimezone(timezone.utc)
+    return int(parsed.timestamp())

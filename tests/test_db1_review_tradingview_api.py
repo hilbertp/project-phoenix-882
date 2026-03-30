@@ -44,10 +44,13 @@ def _sync_payload() -> dict[str, object]:
         },
         "review_structure": {
             "structure_id": "db1-fib-0001",
+            "direction": "up",
             "parent_anchor_source_timestamp": "2025-12-31T10:00:00",
             "parent_anchor_price": 88350.7,
+            "parent_anchor_kind": "low",
             "terminal_extreme_source_timestamp": "2025-12-31T16:00:00",
             "terminal_extreme_price": 89180.8,
+            "terminal_extreme_kind": "high",
         },
     }
 
