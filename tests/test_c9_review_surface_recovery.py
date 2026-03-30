@@ -128,6 +128,7 @@ class FakeReviewApiState:
         self.fail_first_sync_for = fail_first_sync_for or set()
         self.sync_attempts: dict[str, int] = {}
         self.submissions: list[dict[str, object]] = []
+        self.chart_truth_verdicts: dict[str, dict[str, object]] = {}
         self._submission_counter = 0
         self.structures = [
             _structure_payload(
@@ -209,6 +210,32 @@ class FakeReviewApiState:
             "chart_title": "BTCUSDT.P proof",
         }
 
+    def get_chart_truth_verdict(self, structure_id: str) -> dict[str, object]:
+        verdict_payload = self.chart_truth_verdicts.get(structure_id)
+        if verdict_payload is None:
+            return {
+                "structure_id": structure_id,
+                "verdict": None,
+                "recorded_at_utc": None,
+            }
+        return verdict_payload
+
+    def save_chart_truth_verdict(self, payload: dict[str, object]) -> tuple[int, dict[str, object]]:
+        structure_id = payload.get("structure_id")
+        verdict = payload.get("verdict")
+        if not isinstance(structure_id, str) or structure_id == "":
+            return HTTPStatus.BAD_REQUEST, {"error": "structure_id must be a non-empty string."}
+        if verdict not in {"up", "down", "meh"}:
+            return HTTPStatus.BAD_REQUEST, {"error": "verdict must be one of ['down', 'meh', 'up']."}
+
+        response_payload = {
+            "structure_id": structure_id,
+            "verdict": verdict,
+            "recorded_at_utc": "2026-03-31T00:00:00+00:00",
+        }
+        self.chart_truth_verdicts[structure_id] = response_payload
+        return HTTPStatus.CREATED, response_payload
+
 
 class SimpleReviewApiHandler(SimpleHTTPRequestHandler):
     def __init__(self, api_state: FakeReviewApiState, *args: Any, **kwargs: Any) -> None:
@@ -235,6 +262,14 @@ class SimpleReviewApiHandler(SimpleHTTPRequestHandler):
             self._write_json(HTTPStatus.OK, payload)
             return
 
+        if parsed.path == "/db1/review/chart-truth-verdict":
+            structure_id = parse_qs(parsed.query).get("structure_id", [""])[0]
+            self._write_json(
+                HTTPStatus.OK,
+                self._api_state.get_chart_truth_verdict(structure_id),
+            )
+            return
+
         if parsed.path == "/db1/review/summary":
             self._write_json(HTTPStatus.OK, self._api_state.summary_payload())
             return
@@ -254,6 +289,11 @@ class SimpleReviewApiHandler(SimpleHTTPRequestHandler):
 
         if parsed.path == "/db1/review/submissions":
             self._write_json(HTTPStatus.ACCEPTED, self._api_state.submit(payload))
+            return
+
+        if parsed.path == "/db1/review/chart-truth-verdict":
+            status, response_payload = self._api_state.save_chart_truth_verdict(payload)
+            self._write_json(status, response_payload)
             return
 
         self._write_json(HTTPStatus.NOT_FOUND, {"error": "Not found."})

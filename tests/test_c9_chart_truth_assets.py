@@ -29,7 +29,7 @@ class ChartTruthAssetTests(unittest.TestCase):
         self.assertNotIn("good_enough", html)
         self.assertNotIn("TradingView Review", html)
 
-    def test_chart_truth_script_loads_single_structure_and_persists_saved_verdict_locally(self) -> None:
+    def test_chart_truth_script_loads_single_structure_and_uses_canonical_verdict_api(self) -> None:
         script = UI_SCRIPT.read_text(encoding="utf-8")
 
         self.assertIn("/db1/review/structures?position=1", script)
@@ -37,9 +37,10 @@ class ChartTruthAssetTests(unittest.TestCase):
         self.assertIn("verifyRenderTruth", script)
         self.assertIn("selectedVerdict", script)
         self.assertIn("savedVerdict", script)
-        self.assertIn("localStorage", script)
+        self.assertIn("/db1/review/chart-truth-verdict", script)
         self.assertIn("Save verdict", UI_HTML.read_text(encoding="utf-8"))
         self.assertIn("aria-pressed", script)
+        self.assertNotIn("localStorage", script)
         self.assertNotIn("/db1/review/submissions", script)
         self.assertNotIn("/db1/review/summary", script)
 

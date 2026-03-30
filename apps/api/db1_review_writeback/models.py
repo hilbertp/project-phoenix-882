@@ -39,3 +39,23 @@ class ReviewSubmissionResponse:
     structure_id: str
     review_outcome: str
     recorded_at_utc: str
+
+
+@dataclass(frozen=True, slots=True)
+class ChartTruthVerdictRequest:
+    structure_id: str
+    verdict: str
+
+
+@dataclass(frozen=True, slots=True)
+class ChartTruthVerdictRecord:
+    structure_id: str
+    verdict: str
+    recorded_at_utc: str
+
+
+@dataclass(frozen=True, slots=True)
+class ChartTruthVerdictResponse:
+    structure_id: str
+    verdict: str | None
+    recorded_at_utc: str | None

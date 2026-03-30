@@ -5,13 +5,17 @@ from pathlib import Path
 
 from apps.api.db1_review_writeback.models import (
     AnchorPair,
+    ChartTruthVerdictRecord,
+    ChartTruthVerdictRequest,
+    ChartTruthVerdictResponse,
     ReviewSubmissionRecord,
     ReviewSubmissionRequest,
     ReviewSubmissionResponse,
 )
-from apps.api.db1_review_writeback.store import ReviewSubmissionStore
+from apps.api.db1_review_writeback.store import ChartTruthVerdictStore, ReviewSubmissionStore
 
 ALLOWED_REVIEW_OUTCOMES = {"good_enough", "adjusted_accept", "flatout_wrong"}
+ALLOWED_CHART_TRUTH_VERDICTS = {"up", "down", "meh"}
 DEFAULT_ARTIFACTS_DIR = Path("artifacts/discovery_bet_1")
 
 
@@ -19,9 +23,14 @@ class InvalidReviewSubmissionError(Exception):
     """The caller supplied an invalid DB1 review submission."""
 
 
+class InvalidChartTruthVerdictError(Exception):
+    """The caller supplied an invalid chart-truth verdict payload."""
+
+
 class DB1ReviewWritebackService:
     def __init__(self, artifacts_dir: Path = DEFAULT_ARTIFACTS_DIR) -> None:
         self._store = ReviewSubmissionStore(artifacts_dir)
+        self._chart_truth_store = ChartTruthVerdictStore(artifacts_dir)
 
     def submit_review(self, payload: dict[str, object]) -> ReviewSubmissionResponse:
         request = _parse_submission_request(payload)
@@ -43,6 +52,41 @@ class DB1ReviewWritebackService:
             structure_id=request.structure_id,
             review_outcome=request.review_outcome,
             recorded_at_utc=recorded_at_utc,
+        )
+
+    def save_chart_truth_verdict(
+        self, payload: dict[str, object]
+    ) -> ChartTruthVerdictResponse:
+        request = _parse_chart_truth_verdict_request(payload)
+        recorded_at_utc = datetime.now(UTC).isoformat()
+        record = ChartTruthVerdictRecord(
+            structure_id=request.structure_id,
+            verdict=request.verdict,
+            recorded_at_utc=recorded_at_utc,
+        )
+        self._chart_truth_store.append(record)
+        return ChartTruthVerdictResponse(
+            structure_id=request.structure_id,
+            verdict=request.verdict,
+            recorded_at_utc=recorded_at_utc,
+        )
+
+    def get_chart_truth_verdict(self, structure_id: str) -> ChartTruthVerdictResponse:
+        if structure_id == "":
+            raise InvalidChartTruthVerdictError("structure_id must be a non-empty string.")
+
+        record = self._chart_truth_store.latest_for_structure(structure_id)
+        if record is None:
+            return ChartTruthVerdictResponse(
+                structure_id=structure_id,
+                verdict=None,
+                recorded_at_utc=None,
+            )
+
+        return ChartTruthVerdictResponse(
+            structure_id=record.structure_id,
+            verdict=record.verdict,
+            recorded_at_utc=record.recorded_at_utc,
         )
 
 
@@ -97,6 +141,19 @@ def _parse_submission_request(payload: dict[str, object]) -> ReviewSubmissionReq
         note=normalized_note,
         previous_structure_comparison_used=previous_structure_comparison_used,
     )
+
+
+def _parse_chart_truth_verdict_request(
+    payload: dict[str, object]
+) -> ChartTruthVerdictRequest:
+    structure_id = _require_non_empty_string(payload, "structure_id")
+    verdict = _require_non_empty_string(payload, "verdict")
+    if verdict not in ALLOWED_CHART_TRUTH_VERDICTS:
+        raise InvalidChartTruthVerdictError(
+            f"verdict must be one of {sorted(ALLOWED_CHART_TRUTH_VERDICTS)}."
+        )
+
+    return ChartTruthVerdictRequest(structure_id=structure_id, verdict=verdict)
 
 
 def _require_non_empty_string(payload: dict[str, object], key: str) -> str:

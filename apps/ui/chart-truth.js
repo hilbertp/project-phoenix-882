@@ -1,6 +1,5 @@
 (function () {
   const API_BASE_URL = window.DB1_REVIEW_API_BASE_URL || "http://127.0.0.1:8000";
-  const VERDICT_STORAGE_PREFIX = "db1-chart-truth-verdict:";
   const body = document.body;
   const state = {
     currentStructureId: "",
@@ -45,7 +44,7 @@
       const payload = await loadFirstStructure();
       const structure = payload.current_structure;
       renderStructure(structure);
-      restoreSavedVerdict(structure.structure_id);
+      await restoreSavedVerdict(structure.structure_id);
       await syncStructure(payload.market_contract, structure);
       setState("synced", "", true);
     } catch (error) {
@@ -209,43 +208,66 @@
       : "No saved verdict.";
   }
 
-  function restoreSavedVerdict(structureId) {
-    const savedVerdict = readSavedVerdict(structureId);
+  async function restoreSavedVerdict(structureId) {
+    const verdictPayload = await loadSavedVerdict(structureId);
+    const savedVerdict = isSupportedVerdict(verdictPayload.verdict)
+      ? verdictPayload.verdict
+      : "";
     state.savedVerdict = savedVerdict;
     state.selectedVerdict = savedVerdict;
     renderVerdict();
   }
 
-  function saveVerdict() {
+  async function saveVerdict() {
     if (!state.currentStructureId || !state.selectedVerdict) {
       return;
     }
 
     try {
-      window.localStorage.setItem(
-        storageKey(state.currentStructureId),
-        state.selectedVerdict
-      );
+      const response = await fetch(API_BASE_URL + "/db1/review/chart-truth-verdict", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          structure_id: state.currentStructureId,
+          verdict: state.selectedVerdict,
+        }),
+      });
+      const payload = await response.json().catch(function () {
+        return { error: "Verdict save response was not valid JSON." };
+      });
+      if (!response.ok) {
+        throw new Error(payload.error || "Verdict save failed.");
+      }
+
+      state.savedVerdict = isSupportedVerdict(payload.verdict) ? payload.verdict : "";
     } catch (error) {
-      setState("error", "Verdict save failed.", body.dataset.chartTruthVerified === "true");
+      setState(
+        "error",
+        String(error.message || error),
+        body.dataset.chartTruthVerified === "true"
+      );
       return;
     }
 
-    state.savedVerdict = state.selectedVerdict;
     renderVerdict();
   }
 
-  function readSavedVerdict(structureId) {
-    try {
-      const savedVerdict = window.localStorage.getItem(storageKey(structureId));
-      return isSupportedVerdict(savedVerdict) ? savedVerdict : "";
-    } catch (error) {
-      return "";
+  async function loadSavedVerdict(structureId) {
+    const response = await fetch(
+      API_BASE_URL
+        + "/db1/review/chart-truth-verdict?structure_id="
+        + encodeURIComponent(structureId)
+    );
+    const payload = await response.json().catch(function () {
+      return { error: "Verdict load response was not valid JSON." };
+    });
+    if (!response.ok) {
+      throw new Error(payload.error || "Verdict load failed.");
     }
-  }
 
-  function storageKey(structureId) {
-    return VERDICT_STORAGE_PREFIX + structureId;
+    return payload;
   }
 
   function isSupportedVerdict(verdict) {

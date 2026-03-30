@@ -177,6 +177,10 @@ class ChartTruthSliceATests(unittest.TestCase):
                 self.assertEqual(selected_copy.text.strip(), "Selected verdict: UP")
                 self.assertEqual(save_status.text.strip(), "Saved verdict: UP")
                 self.assertFalse(save_button.is_enabled())
+                self.assertEqual(
+                    api_state.chart_truth_verdicts["db1-fib-0001"]["verdict"],
+                    "up",
+                )
 
                 driver.refresh()
 
@@ -206,6 +210,62 @@ class ChartTruthSliceATests(unittest.TestCase):
                 self.assertEqual(api_state.sync_attempts, {"db1-fib-0001": 2})
             finally:
                 driver.quit()
+
+    def test_chart_truth_saved_verdict_restores_in_new_browser_session(self) -> None:
+        api_state = VerifiedChartTruthApiState()
+        with running_review_servers(api_state) as urls:
+            first_driver = _create_driver(urls.api_base_url)
+            second_driver = None
+            try:
+                first_wait = WebDriverWait(first_driver, 60)
+                first_driver.get(urls.ui_url.replace("/index.html", "/chart-truth.html"))
+
+                first_body = first_wait.until(
+                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                )
+                first_wait.until(
+                    lambda browser: first_body.get_attribute("data-chart-truth-state") == "synced"
+                )
+                first_driver.find_element(By.ID, "chart-truth-verdict-down").click()
+                first_wait.until(
+                    lambda browser: first_body.get_attribute("data-chart-truth-verdict") == "down"
+                )
+                first_driver.find_element(By.ID, "chart-truth-save-verdict").click()
+                first_wait.until(
+                    lambda browser: first_body.get_attribute("data-chart-truth-saved-verdict") == "down"
+                )
+            finally:
+                first_driver.quit()
+
+            second_driver = _create_driver(urls.api_base_url)
+            try:
+                second_wait = WebDriverWait(second_driver, 60)
+                second_driver.get(urls.ui_url.replace("/index.html", "/chart-truth.html"))
+
+                second_body = second_wait.until(
+                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                )
+                second_wait.until(
+                    lambda browser: second_body.get_attribute("data-chart-truth-state") == "synced"
+                )
+                second_wait.until(
+                    lambda browser: second_body.get_attribute("data-chart-truth-saved-verdict") == "down"
+                )
+
+                self.assertEqual(
+                    second_driver.find_element(By.ID, "chart-truth-selected-verdict").text.strip(),
+                    "Selected verdict: DOWN",
+                )
+                self.assertEqual(
+                    second_driver.find_element(By.ID, "chart-truth-save-status").text.strip(),
+                    "Saved verdict: DOWN",
+                )
+                self.assertEqual(
+                    second_driver.find_element(By.ID, "chart-truth-verdict-down").get_attribute("aria-pressed"),
+                    "true",
+                )
+            finally:
+                second_driver.quit()
 
 
 if __name__ == "__main__":
