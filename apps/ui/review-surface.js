@@ -5,11 +5,12 @@
     currentPayload: null,
     summaryPayload: null,
     viewing: "current",
-    adjustmentMode: false,
     pendingAction: null,
-    adjustmentNote: "",
     previousComparisonUsed: false,
     lastSubmission: null,
+    chartReady: false,
+    syncInFlight: false,
+    tradingViewStatus: "Waiting to sync current structure.",
   };
 
   const elements = {
@@ -19,8 +20,10 @@
     showCurrentButton: document.getElementById("show-current-button"),
     showPreviousButton: document.getElementById("show-previous-button"),
     reloadButton: document.getElementById("reload-button"),
+    syncChartButton: document.getElementById("sync-chart-button"),
     positionSummary: document.getElementById("position-summary"),
     statusBanner: document.getElementById("status-banner"),
+    tradingViewStatus: document.getElementById("tradingview-status"),
     summaryReadinessHint: document.getElementById("summary-readiness-hint"),
     summaryTotalReviewed: document.getElementById("summary-total-reviewed"),
     summaryGoodEnough: document.getElementById("summary-good-enough"),
@@ -52,20 +55,6 @@
     goodEnoughButton: document.getElementById("good-enough-button"),
     adjustedAcceptButton: document.getElementById("adjusted-accept-button"),
     flatoutWrongButton: document.getElementById("flatout-wrong-button"),
-    adjustmentPanel: document.getElementById("adjustment-panel"),
-    adjustmentNoteInput: document.getElementById("adjustment-note-input"),
-    adjustedParentAnchorTimestamp: document.getElementById(
-      "adjusted-parent-anchor-timestamp"
-    ),
-    adjustedParentAnchorPrice: document.getElementById("adjusted-parent-anchor-price"),
-    adjustedTerminalExtremeTimestamp: document.getElementById(
-      "adjusted-terminal-extreme-timestamp"
-    ),
-    adjustedTerminalExtremePrice: document.getElementById(
-      "adjusted-terminal-extreme-price"
-    ),
-    cancelAdjustmentButton: document.getElementById("cancel-adjustment-button"),
-    finaliseAdjustmentButton: document.getElementById("finalise-adjustment-button"),
     debugPayload: document.getElementById("debug-payload"),
   };
 
@@ -93,6 +82,10 @@
       loadPosition(state.currentPosition);
     });
 
+    elements.syncChartButton.addEventListener("click", function () {
+      syncTradingViewCurrentStructure();
+    });
+
     elements.goodEnoughButton.addEventListener("click", function () {
       finaliseAction("good_enough");
     });
@@ -102,23 +95,6 @@
     });
 
     elements.adjustedAcceptButton.addEventListener("click", function () {
-      state.adjustmentMode = true;
-      state.pendingAction = "adjusted_accept";
-      setStatus("Adjustment mode active. Review the current structure and finalise when ready.");
-      render();
-    });
-
-    elements.cancelAdjustmentButton.addEventListener("click", function () {
-      state.adjustmentMode = false;
-      state.pendingAction = null;
-      state.adjustmentNote = "";
-      elements.adjustmentNoteInput.value = "";
-      setStatus("Adjustment mode cancelled. Current structure remains active.");
-      render();
-    });
-
-    elements.finaliseAdjustmentButton.addEventListener("click", function () {
-      state.adjustmentNote = elements.adjustmentNoteInput.value;
       finaliseAction("adjusted_accept");
     });
   }
@@ -139,19 +115,19 @@
       state.currentPosition = state.currentPayload.progress.current_position;
       state.totalStructures = state.currentPayload.progress.total_structures;
       state.viewing = "current";
-      state.adjustmentMode = false;
       state.pendingAction = null;
       state.previousComparisonUsed = false;
       state.lastSubmission = null;
+      state.chartReady = false;
       elements.reviewNoteInput.value = "";
-      elements.adjustmentNoteInput.value = "";
-      state.adjustmentNote = "";
-      populateAdjustmentFields(state.currentPayload.current_structure);
       await loadSummary();
       setStatus("Loaded " + state.currentPayload.progress.label + ".");
       render();
+      await syncTradingViewCurrentStructure();
+      render();
     } catch (error) {
       setStatus(String(error.message || error), "error");
+      render();
     }
   }
 
@@ -172,6 +148,19 @@
   }
 
   async function finaliseAction(action) {
+    if (state.syncInFlight) {
+      setStatus("TradingView sync is still in progress for the current structure.", "error");
+      return;
+    }
+
+    if (!state.chartReady) {
+      setStatus(
+        "TradingView sync failed for the current structure. Re-sync before submitting a review.",
+        "error"
+      );
+      return;
+    }
+
     state.pendingAction = action;
     const submissionPayload = buildSubmissionPayload(action);
     try {
@@ -201,7 +190,6 @@
 
     const nextPosition = state.currentPosition + 1;
     if (nextPosition > state.totalStructures) {
-      state.adjustmentMode = false;
       setStatus(
         "Review complete. Final action: " + action + ". Submission recorded.",
         "warning"
@@ -223,6 +211,8 @@
     const market = state.currentPayload.market_contract;
     const progress = state.currentPayload.progress;
     const summary = state.summaryPayload ? state.summaryPayload.summary : null;
+    const reviewLocked =
+      !state.chartReady || state.syncInFlight || state.pendingAction !== null;
 
     elements.marketSymbol.textContent = market.tradingview_symbol;
     elements.progressLabel.textContent = progress.label;
@@ -266,6 +256,7 @@
     elements.pendingAction.textContent = state.pendingAction
       ? "Pending action: " + state.pendingAction
       : "No action selected";
+    elements.tradingViewStatus.textContent = state.tradingViewStatus;
 
     elements.showCurrentButton.classList.toggle(
       "is-active",
@@ -276,8 +267,10 @@
       state.viewing === "previous"
     );
     elements.showPreviousButton.disabled = !hasPrevious();
-
-    elements.adjustmentPanel.classList.toggle("is-hidden", !state.adjustmentMode);
+    elements.syncChartButton.disabled = state.syncInFlight || state.pendingAction !== null;
+    elements.goodEnoughButton.disabled = reviewLocked;
+    elements.adjustedAcceptButton.disabled = reviewLocked;
+    elements.flatoutWrongButton.disabled = reviewLocked;
     renderSummary(summary);
     elements.debugPayload.textContent = JSON.stringify(
       {
@@ -286,7 +279,9 @@
         previous_structure: state.currentPayload.previous_structure,
         summary: state.summaryPayload ? state.summaryPayload.summary : null,
         previous_structure_comparison_used: state.previousComparisonUsed,
-        adjustment_note: state.adjustmentNote,
+        tradingview_status: state.tradingViewStatus,
+        chart_ready: state.chartReady,
+        sync_in_flight: state.syncInFlight,
         last_submission: state.lastSubmission,
       },
       null,
@@ -296,28 +291,20 @@
 
   function buildSubmissionPayload(action) {
     const currentStructure = state.currentPayload.current_structure;
+    const proposedAnchorPair = {
+      parent_anchor_source_timestamp:
+        currentStructure.parent_anchor_source_timestamp,
+      parent_anchor_price: Number(currentStructure.parent_anchor_price),
+      terminal_extreme_source_timestamp:
+        currentStructure.terminal_extreme_source_timestamp,
+      terminal_extreme_price: Number(currentStructure.terminal_extreme_price),
+    };
+
     return {
       structure_id: currentStructure.structure_id,
-      proposed_anchor_pair: {
-        parent_anchor_source_timestamp:
-          currentStructure.parent_anchor_source_timestamp,
-        parent_anchor_price: Number(currentStructure.parent_anchor_price),
-        terminal_extreme_source_timestamp:
-          currentStructure.terminal_extreme_source_timestamp,
-        terminal_extreme_price: Number(currentStructure.terminal_extreme_price),
-      },
+      proposed_anchor_pair: proposedAnchorPair,
       review_outcome: action,
-      adjusted_anchor_pair:
-        action === "adjusted_accept"
-          ? {
-              parent_anchor_source_timestamp:
-                elements.adjustedParentAnchorTimestamp.value,
-              parent_anchor_price: Number(elements.adjustedParentAnchorPrice.value),
-              terminal_extreme_source_timestamp:
-                elements.adjustedTerminalExtremeTimestamp.value,
-              terminal_extreme_price: Number(elements.adjustedTerminalExtremePrice.value),
-            }
-          : null,
+      adjusted_anchor_pair: action === "adjusted_accept" ? proposedAnchorPair : null,
       note: elements.reviewNoteInput.value || null,
       previous_structure_comparison_used: state.previousComparisonUsed,
     };
@@ -370,19 +357,6 @@
       .join("");
   }
 
-  function populateAdjustmentFields(structure) {
-    elements.adjustedParentAnchorTimestamp.value =
-      structure.parent_anchor_source_timestamp;
-    elements.adjustedParentAnchorPrice.value = Number(
-      structure.parent_anchor_price
-    ).toFixed(2);
-    elements.adjustedTerminalExtremeTimestamp.value =
-      structure.terminal_extreme_source_timestamp;
-    elements.adjustedTerminalExtremePrice.value = Number(
-      structure.terminal_extreme_price
-    ).toFixed(2);
-  }
-
   function getVisibleStructure() {
     if (state.viewing === "previous" && hasPrevious()) {
       return state.currentPayload.previous_structure;
@@ -406,6 +380,55 @@
 
   function formatShare(value) {
     return (Number(value) * 100).toFixed(1) + "%";
+  }
+
+  async function syncTradingViewCurrentStructure() {
+    if (!state.currentPayload) {
+      return;
+    }
+
+    state.chartReady = false;
+    state.syncInFlight = true;
+    state.tradingViewStatus = "Syncing the real TradingView chart...";
+    render();
+    try {
+      const response = await fetch(API_BASE_URL + "/db1/review/tradingview/sync", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          market_contract: state.currentPayload.market_contract,
+          review_structure: state.currentPayload.current_structure,
+        }),
+      });
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(function () {
+          return { error: "TradingView sync failed." };
+        });
+        throw new Error(errorPayload.error || "TradingView sync failed.");
+      }
+
+      const payload = await response.json();
+      state.chartReady = true;
+      state.syncInFlight = false;
+      state.tradingViewStatus =
+        "TradingView synced for "
+        + payload.structure_id
+        + " on "
+        + payload.market_symbol
+        + " "
+        + payload.timeframe
+        + ".";
+      render();
+    } catch (error) {
+      state.chartReady = false;
+      state.syncInFlight = false;
+      state.tradingViewStatus =
+        "TradingView sync failed. Use 'sync TradingView' to retry the current structure.";
+      setStatus(state.tradingViewStatus, "error");
+      render();
+    }
   }
 
   function setStatus(message, tone) {
