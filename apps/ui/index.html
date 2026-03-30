@@ -41,6 +41,46 @@
 
       <section id="status-banner" class="status-banner" aria-live="polite"></section>
 
+      <section class="summary-strip">
+        <article class="summary-card review-summary-card">
+          <div class="summary-header">
+            <div>
+              <p class="card-label">Review Summary</p>
+              <h2>Decision-ready signal</h2>
+            </div>
+            <p id="summary-readiness-hint" class="readiness-chip">refine once</p>
+          </div>
+
+          <div class="summary-metrics">
+            <div class="metric-tile">
+              <span class="range-label">Reviewed</span>
+              <strong id="summary-total-reviewed">0</strong>
+            </div>
+            <div class="metric-tile">
+              <span class="range-label">good_enough</span>
+              <strong id="summary-good-enough">0</strong>
+            </div>
+            <div class="metric-tile">
+              <span class="range-label">adjusted_accept</span>
+              <strong id="summary-adjusted-accept">0</strong>
+            </div>
+            <div class="metric-tile">
+              <span class="range-label">flatout_wrong</span>
+              <strong id="summary-flatout-wrong">0</strong>
+            </div>
+            <div class="metric-tile">
+              <span class="range-label">Positive Share</span>
+              <strong id="summary-positive-share">0.0%</strong>
+            </div>
+          </div>
+
+          <div id="wrong-case-summary-block" class="summary-notes is-hidden">
+            <p class="card-label">Wrong-case notes</p>
+            <ul id="wrong-case-reason-list" class="reason-list"></ul>
+          </div>
+        </article>
+      </section>
+
       <section class="structure-grid">
         <article class="summary-card">
           <p class="card-label">Market Context</p>

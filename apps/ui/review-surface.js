@@ -3,6 +3,7 @@
     currentPosition: 1,
     totalStructures: 0,
     currentPayload: null,
+    summaryPayload: null,
     viewing: "current",
     adjustmentMode: false,
     pendingAction: null,
@@ -20,6 +21,14 @@
     reloadButton: document.getElementById("reload-button"),
     positionSummary: document.getElementById("position-summary"),
     statusBanner: document.getElementById("status-banner"),
+    summaryReadinessHint: document.getElementById("summary-readiness-hint"),
+    summaryTotalReviewed: document.getElementById("summary-total-reviewed"),
+    summaryGoodEnough: document.getElementById("summary-good-enough"),
+    summaryAdjustedAccept: document.getElementById("summary-adjusted-accept"),
+    summaryFlatoutWrong: document.getElementById("summary-flatout-wrong"),
+    summaryPositiveShare: document.getElementById("summary-positive-share"),
+    wrongCaseSummaryBlock: document.getElementById("wrong-case-summary-block"),
+    wrongCaseReasonList: document.getElementById("wrong-case-reason-list"),
     marketContextTitle: document.getElementById("market-context-title"),
     marketContextSymbol: document.getElementById("market-context-symbol"),
     marketContextInstrument: document.getElementById("market-context-instrument"),
@@ -138,10 +147,27 @@
       elements.adjustmentNoteInput.value = "";
       state.adjustmentNote = "";
       populateAdjustmentFields(state.currentPayload.current_structure);
+      await loadSummary();
       setStatus("Loaded " + state.currentPayload.progress.label + ".");
       render();
     } catch (error) {
       setStatus(String(error.message || error), "error");
+    }
+  }
+
+  async function loadSummary() {
+    try {
+      const response = await fetch(API_BASE_URL + "/db1/review/summary");
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(function () {
+          return { error: "Summary request failed." };
+        });
+        throw new Error(errorPayload.error || "Summary request failed.");
+      }
+      state.summaryPayload = await response.json();
+    } catch (error) {
+      state.summaryPayload = null;
+      throw error;
     }
   }
 
@@ -165,6 +191,7 @@
       }
 
       state.lastSubmission = await response.json();
+      await loadSummary();
     } catch (error) {
       state.pendingAction = null;
       setStatus(String(error.message || error), "error");
@@ -195,6 +222,7 @@
     const structure = getVisibleStructure();
     const market = state.currentPayload.market_contract;
     const progress = state.currentPayload.progress;
+    const summary = state.summaryPayload ? state.summaryPayload.summary : null;
 
     elements.marketSymbol.textContent = market.tradingview_symbol;
     elements.progressLabel.textContent = progress.label;
@@ -250,11 +278,13 @@
     elements.showPreviousButton.disabled = !hasPrevious();
 
     elements.adjustmentPanel.classList.toggle("is-hidden", !state.adjustmentMode);
+    renderSummary(summary);
     elements.debugPayload.textContent = JSON.stringify(
       {
         progress: state.currentPayload.progress,
         current_structure: state.currentPayload.current_structure,
         previous_structure: state.currentPayload.previous_structure,
+        summary: state.summaryPayload ? state.summaryPayload.summary : null,
         previous_structure_comparison_used: state.previousComparisonUsed,
         adjustment_note: state.adjustmentNote,
         last_submission: state.lastSubmission,
@@ -290,6 +320,53 @@
     };
   }
 
+  function renderSummary(summary) {
+    if (!summary) {
+      elements.summaryTotalReviewed.textContent = "-";
+      elements.summaryGoodEnough.textContent = "-";
+      elements.summaryAdjustedAccept.textContent = "-";
+      elements.summaryFlatoutWrong.textContent = "-";
+      elements.summaryPositiveShare.textContent = "-";
+      elements.summaryReadinessHint.textContent = "summary unavailable";
+      elements.summaryReadinessHint.classList.remove("is-continue", "is-kill");
+      elements.wrongCaseSummaryBlock.classList.add("is-hidden");
+      elements.wrongCaseReasonList.innerHTML = "";
+      return;
+    }
+
+    elements.summaryTotalReviewed.textContent = String(
+      summary.total_reviewed_structures
+    );
+    elements.summaryGoodEnough.textContent = String(summary.good_enough_count);
+    elements.summaryAdjustedAccept.textContent = String(
+      summary.adjusted_accept_count
+    );
+    elements.summaryFlatoutWrong.textContent = String(summary.flatout_wrong_count);
+    elements.summaryPositiveShare.textContent = formatShare(
+      summary.combined_positive_share
+    );
+    elements.summaryReadinessHint.textContent = summary.readiness_hint;
+    elements.summaryReadinessHint.classList.toggle(
+      "is-continue",
+      summary.readiness_hint === "continue"
+    );
+    elements.summaryReadinessHint.classList.toggle(
+      "is-kill",
+      summary.readiness_hint === "kill and switch"
+    );
+
+    const reasonCounts = state.summaryPayload.wrong_case_reason_counts || [];
+    elements.wrongCaseSummaryBlock.classList.toggle(
+      "is-hidden",
+      reasonCounts.length === 0
+    );
+    elements.wrongCaseReasonList.innerHTML = reasonCounts
+      .map(function (reasonCount) {
+        return "<li>" + reasonCount.reason + " (" + reasonCount.count + ")</li>";
+      })
+      .join("");
+  }
+
   function populateAdjustmentFields(structure) {
     elements.adjustedParentAnchorTimestamp.value =
       structure.parent_anchor_timestamp_utc;
@@ -322,6 +399,10 @@
 
   function formatTimestamp(value) {
     return String(value).replace("T", " ").replace("+00:00", " UTC");
+  }
+
+  function formatShare(value) {
+    return (Number(value) * 100).toFixed(1) + "%";
   }
 
   function setStatus(message, tone) {
