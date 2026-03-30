@@ -1,14 +1,42 @@
 (function () {
   const API_BASE_URL = window.DB1_REVIEW_API_BASE_URL || "http://127.0.0.1:8000";
+  const VERDICT_STORAGE_PREFIX = "db1-chart-truth-verdict:";
   const body = document.body;
+  const state = {
+    currentStructureId: "",
+    selectedVerdict: "",
+    savedVerdict: "",
+  };
   const elements = {
     structureId: document.getElementById("chart-truth-structure-id"),
     direction: document.getElementById("chart-truth-direction"),
     anchor1: document.getElementById("chart-truth-anchor-1"),
     anchor2: document.getElementById("chart-truth-anchor-2"),
+    selectedVerdict: document.getElementById("chart-truth-selected-verdict"),
+    saveButton: document.getElementById("chart-truth-save-verdict"),
+    saveStatus: document.getElementById("chart-truth-save-status"),
+    verdictButtons: Array.from(
+      document.querySelectorAll(".chart-truth-verdict-button")
+    ),
   };
 
+  wireEvents();
+  renderVerdict();
   boot();
+
+  function wireEvents() {
+    elements.verdictButtons.forEach(function (button) {
+      button.addEventListener("click", function () {
+        const verdict = button.getAttribute("data-verdict") || "";
+        state.selectedVerdict = verdict;
+        renderVerdict();
+      });
+    });
+
+    elements.saveButton.addEventListener("click", function () {
+      saveVerdict();
+    });
+  }
 
   async function boot() {
     setState("loading");
@@ -17,6 +45,7 @@
       const payload = await loadFirstStructure();
       const structure = payload.current_structure;
       renderStructure(structure);
+      restoreSavedVerdict(structure.structure_id);
       await syncStructure(payload.market_contract, structure);
       setState("synced", "", true);
     } catch (error) {
@@ -79,6 +108,7 @@
   }
 
   function renderStructure(structure) {
+    state.currentStructureId = structure.structure_id;
     elements.structureId.textContent = structure.structure_id;
     elements.direction.textContent = String(structure.direction || "").toUpperCase();
     elements.anchor1.textContent = formatAnchor(
@@ -156,5 +186,69 @@
     body.dataset.chartTruthState = state;
     body.dataset.chartTruthVerified = verified ? "true" : "false";
     body.dataset.chartTruthError = errorMessage || "";
+  }
+
+  function renderVerdict() {
+    body.dataset.chartTruthVerdict = state.selectedVerdict;
+    body.dataset.chartTruthSavedVerdict = state.savedVerdict;
+
+    elements.verdictButtons.forEach(function (button) {
+      const verdict = button.getAttribute("data-verdict") || "";
+      const selected = verdict === state.selectedVerdict;
+      button.setAttribute("aria-pressed", selected ? "true" : "false");
+    });
+
+    elements.selectedVerdict.textContent = state.selectedVerdict
+      ? "Selected verdict: " + state.selectedVerdict.toUpperCase()
+      : "No verdict selected.";
+
+    elements.saveButton.disabled =
+      !state.selectedVerdict || state.selectedVerdict === state.savedVerdict;
+    elements.saveStatus.textContent = state.savedVerdict
+      ? "Saved verdict: " + state.savedVerdict.toUpperCase()
+      : "No saved verdict.";
+  }
+
+  function restoreSavedVerdict(structureId) {
+    const savedVerdict = readSavedVerdict(structureId);
+    state.savedVerdict = savedVerdict;
+    state.selectedVerdict = savedVerdict;
+    renderVerdict();
+  }
+
+  function saveVerdict() {
+    if (!state.currentStructureId || !state.selectedVerdict) {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(
+        storageKey(state.currentStructureId),
+        state.selectedVerdict
+      );
+    } catch (error) {
+      setState("error", "Verdict save failed.", body.dataset.chartTruthVerified === "true");
+      return;
+    }
+
+    state.savedVerdict = state.selectedVerdict;
+    renderVerdict();
+  }
+
+  function readSavedVerdict(structureId) {
+    try {
+      const savedVerdict = window.localStorage.getItem(storageKey(structureId));
+      return isSupportedVerdict(savedVerdict) ? savedVerdict : "";
+    } catch (error) {
+      return "";
+    }
+  }
+
+  function storageKey(structureId) {
+    return VERDICT_STORAGE_PREFIX + structureId;
+  }
+
+  function isSupportedVerdict(verdict) {
+    return verdict === "up" || verdict === "down" || verdict === "meh";
   }
 })();

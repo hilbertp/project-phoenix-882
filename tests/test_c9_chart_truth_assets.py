@@ -20,15 +20,26 @@ class ChartTruthAssetTests(unittest.TestCase):
         self.assertIn("Direction", html)
         self.assertIn("Anchor 1", html)
         self.assertIn("Anchor 2", html)
+        self.assertIn("Verdict", html)
+        self.assertIn("chart-truth-verdict-up", html)
+        self.assertIn("chart-truth-verdict-down", html)
+        self.assertIn("chart-truth-verdict-meh", html)
+        self.assertIn("chart-truth-save-verdict", html)
+        self.assertIn("chart-truth-save-status", html)
         self.assertNotIn("good_enough", html)
         self.assertNotIn("TradingView Review", html)
 
-    def test_chart_truth_script_loads_single_structure_and_syncs_one_fib(self) -> None:
+    def test_chart_truth_script_loads_single_structure_and_persists_saved_verdict_locally(self) -> None:
         script = UI_SCRIPT.read_text(encoding="utf-8")
 
         self.assertIn("/db1/review/structures?position=1", script)
         self.assertIn("/db1/review/tradingview/sync", script)
         self.assertIn("verifyRenderTruth", script)
+        self.assertIn("selectedVerdict", script)
+        self.assertIn("savedVerdict", script)
+        self.assertIn("localStorage", script)
+        self.assertIn("Save verdict", UI_HTML.read_text(encoding="utf-8"))
+        self.assertIn("aria-pressed", script)
         self.assertNotIn("/db1/review/submissions", script)
         self.assertNotIn("/db1/review/summary", script)
 

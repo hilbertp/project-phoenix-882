@@ -6,26 +6,55 @@
     <title>DB1 Chart Truth</title>
     <link rel="stylesheet" href="./chart-truth.css" />
   </head>
-  <body data-chart-truth-state="loading" data-chart-truth-verified="false">
+  <body
+    data-chart-truth-state="loading"
+    data-chart-truth-verified="false"
+    data-chart-truth-verdict=""
+    data-chart-truth-saved-verdict=""
+  >
     <main class="chart-truth-shell">
-      <dl class="chart-truth-card">
-        <div class="chart-truth-row">
-          <dt>Structure ID</dt>
-          <dd id="chart-truth-structure-id">-</dd>
-        </div>
-        <div class="chart-truth-row">
-          <dt>Direction</dt>
-          <dd id="chart-truth-direction">-</dd>
-        </div>
-        <div class="chart-truth-row">
-          <dt>Anchor 1</dt>
-          <dd id="chart-truth-anchor-1">-</dd>
-        </div>
-        <div class="chart-truth-row">
-          <dt>Anchor 2</dt>
-          <dd id="chart-truth-anchor-2">-</dd>
-        </div>
-      </dl>
+      <section class="chart-truth-card">
+        <dl class="chart-truth-details">
+          <div class="chart-truth-row">
+            <dt>Structure ID</dt>
+            <dd id="chart-truth-structure-id">-</dd>
+          </div>
+          <div class="chart-truth-row">
+            <dt>Direction</dt>
+            <dd id="chart-truth-direction">-</dd>
+          </div>
+          <div class="chart-truth-row">
+            <dt>Anchor 1</dt>
+            <dd id="chart-truth-anchor-1">-</dd>
+          </div>
+          <div class="chart-truth-row">
+            <dt>Anchor 2</dt>
+            <dd id="chart-truth-anchor-2">-</dd>
+          </div>
+        </dl>
+
+        <section class="chart-truth-verdicts" aria-labelledby="chart-truth-verdict-label">
+          <p id="chart-truth-verdict-label" class="chart-truth-verdict-label">Verdict</p>
+          <div class="chart-truth-verdict-actions" role="group" aria-label="Verdict actions">
+            <button id="chart-truth-verdict-up" class="chart-truth-verdict-button" type="button" data-verdict="up" aria-pressed="false">
+              up
+            </button>
+            <button id="chart-truth-verdict-down" class="chart-truth-verdict-button" type="button" data-verdict="down" aria-pressed="false">
+              down
+            </button>
+            <button id="chart-truth-verdict-meh" class="chart-truth-verdict-button" type="button" data-verdict="meh" aria-pressed="false">
+              meh
+            </button>
+          </div>
+          <p id="chart-truth-selected-verdict" class="chart-truth-selected-verdict">No verdict selected.</p>
+          <div class="chart-truth-save-row">
+            <button id="chart-truth-save-verdict" class="chart-truth-save-button" type="button" disabled>
+              Save verdict
+            </button>
+            <p id="chart-truth-save-status" class="chart-truth-save-status">No saved verdict.</p>
+          </div>
+        </section>
+      </section>
     </main>
     <script src="./chart-truth.js"></script>
   </body>
