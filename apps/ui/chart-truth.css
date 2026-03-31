@@ -59,6 +59,10 @@ body {
   padding: 22px 24px 24px;
 }
 
+body[data-chart-truth-proof-mode="true"] .chart-truth-verdicts {
+  display: none;
+}
+
 .chart-truth-verdict-label {
   margin: 0 0 12px;
   font-size: 0.78rem;

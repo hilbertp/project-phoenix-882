@@ -1,5 +1,8 @@
 (function () {
   const API_BASE_URL = window.DB1_REVIEW_API_BASE_URL || "http://127.0.0.1:8000";
+  const pageParams = new URLSearchParams(window.location.search);
+  const selectedPosition = resolveSelectedPosition(pageParams.get("position"));
+  const proofModeEnabled = pageParams.get("proof") === "1";
   const body = document.body;
   const state = {
     currentStructureId: "",
@@ -19,6 +22,7 @@
     ),
   };
 
+  body.dataset.chartTruthProofMode = proofModeEnabled ? "true" : "false";
   wireEvents();
   renderVerdict();
   boot();
@@ -53,7 +57,9 @@
   }
 
   async function loadFirstStructure() {
-    const response = await fetch(API_BASE_URL + "/db1/review/structures?position=1");
+    const response = await fetch(
+      API_BASE_URL + "/db1/review/structures?position=" + String(selectedPosition)
+    );
     const payload = await response.json().catch(function () {
       return { error: "DB1 structure payload was not valid JSON." };
     });
@@ -77,6 +83,7 @@
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
+        keep_browser_open: proofModeEnabled,
         market_contract: {
           tradingview_symbol: marketContract.tradingview_symbol,
           timeframe: marketContract.timeframe,
@@ -272,5 +279,13 @@
 
   function isSupportedVerdict(verdict) {
     return verdict === "up" || verdict === "down" || verdict === "meh";
+  }
+
+  function resolveSelectedPosition(positionParam) {
+    const parsedPosition = Number(positionParam || "1");
+    if (!Number.isInteger(parsedPosition) || parsedPosition <= 0) {
+      return 1;
+    }
+    return parsedPosition;
   }
 })();

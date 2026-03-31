@@ -18,6 +18,12 @@ from tests.test_c9_review_surface_recovery import (
 class ReviewSurfaceThroughputTests(unittest.TestCase):
     def test_keyboard_shortcuts_drive_core_actions_and_toggle_view(self) -> None:
         api_state = FakeReviewApiState()
+        api_state.live_anchor_overrides["db1-fib-0001"] = {
+            "parent_anchor_source_timestamp": "2026-03-01T08:00:00",
+            "parent_anchor_price": 40123.5,
+            "terminal_extreme_source_timestamp": "2026-03-01T12:00:00",
+            "terminal_extreme_price": 40567.25,
+        }
         api_state.structures = [
             _structure_payload(
                 structure_id="db1-fib-0001",
@@ -78,6 +84,12 @@ class ReviewSurfaceThroughputTests(unittest.TestCase):
                     == "structure 2 of 3"
                 )
                 self.assertEqual(api_state.submissions[0]["review_outcome"], "adjusted_accept")
+                self.assertEqual(
+                    api_state.submissions[0]["adjusted_anchor_pair"],
+                    api_state.live_anchor_overrides["db1-fib-0001"],
+                )
+                self.assertIs(api_state.sync_payloads[0]["keep_browser_open"], True)
+                self.assertIs(api_state.sync_payloads[0]["preserve_review_context"], True)
                 self.assertEqual(review_target_id.text.strip(), "db1-fib-0002")
                 self.assertIn("db1-fib-0002", comparison_mode_copy.text)
 
