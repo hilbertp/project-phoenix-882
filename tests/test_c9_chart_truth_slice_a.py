@@ -267,6 +267,55 @@ class ChartTruthSliceATests(unittest.TestCase):
             finally:
                 second_driver.quit()
 
+    def test_chart_truth_proof_mode_loads_requested_structure_and_hides_verdict_controls(self) -> None:
+        api_state = VerifiedChartTruthApiState()
+        with running_review_servers(api_state) as urls:
+            driver = _create_driver(urls.api_base_url)
+            try:
+                wait = WebDriverWait(driver, 60)
+                driver.get(
+                    urls.ui_url.replace(
+                        "/index.html", "/chart-truth.html?position=2&proof=1"
+                    )
+                )
+
+                body = wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+                wait.until(
+                    lambda browser: body.get_attribute("data-chart-truth-state") == "synced"
+                )
+
+                self.assertEqual(body.get_attribute("data-chart-truth-proof-mode"), "true")
+                self.assertEqual(api_state.requested_positions, [2])
+                self.assertEqual(
+                    driver.find_element(By.ID, "chart-truth-structure-id").text.strip(),
+                    "db1-fib-0002",
+                )
+                self.assertEqual(
+                    driver.find_element(By.ID, "chart-truth-direction").text.strip(),
+                    "UP",
+                )
+                self.assertEqual(
+                    driver.find_element(By.ID, "chart-truth-anchor-1").text.strip(),
+                    "2026-03-02 08:00:00 @ 88350.70",
+                )
+                self.assertEqual(
+                    driver.find_element(By.ID, "chart-truth-anchor-2").text.strip(),
+                    "2026-03-02 12:00:00 @ 89180.80",
+                )
+                self.assertFalse(
+                    driver.find_element(By.ID, "chart-truth-verdict-up").is_displayed()
+                )
+                self.assertFalse(
+                    driver.find_element(By.ID, "chart-truth-save-verdict").is_displayed()
+                )
+                self.assertTrue(
+                    driver.execute_script(
+                        "return Boolean(window.__db1ChartTruthLastSync && window.__db1ChartTruthLastSync.structure_id === 'db1-fib-0002');"
+                    )
+                )
+            finally:
+                driver.quit()
+
 
 if __name__ == "__main__":
     unittest.main()

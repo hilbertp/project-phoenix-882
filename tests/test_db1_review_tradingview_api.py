@@ -23,11 +23,38 @@ class FakeTradingViewSyncService:
         return {
             "status": "ok",
             "chart_url": "https://www.tradingview.com/chart/?symbol=BITGET%3ABTCUSDT.P",
+            "chart_theme": {
+                "mode": "dark",
+                "implementation": "preload-theme-bootstrap-plus-chart-properties",
+            },
+            "chart_time_alignment": {
+                "local_system_timezone": "Asia/Nicosia",
+                "explicit_chart_timezone": None,
+                "effective_chart_timezone": "Asia/Nicosia",
+                "timezone_source": "browser-local-fallback",
+            },
             "market_symbol": "BITGET:BTCUSDT.P",
             "timeframe": "1H",
             "structure_id": "db1-fib-0001",
             "placed_tool": "LineToolFibRetracement",
             "chart_title": "BTCUSDT.P proof",
+            "review_style": {
+                "line_color": "#FFFFFF",
+                "visible_levels": [1.0, 0.941, 0.882, 0.786, 0.618, 0.5, 0.382, 0.236, 0.0],
+            },
+            "review_tool": {
+                "source": "proposal-render",
+                "reused_existing_tool": False,
+                "selected_for_editing": True,
+                "selection_count": 1,
+                "matches_proposed_anchors": True,
+                "anchor_pair": {
+                    "parent_anchor_source_timestamp": "2025-12-31T10:00:00",
+                    "parent_anchor_price": 88350.7,
+                    "terminal_extreme_source_timestamp": "2025-12-31T16:00:00",
+                    "terminal_extreme_price": 89180.8,
+                },
+            },
         }
 
 
@@ -38,6 +65,8 @@ class FailingTradingViewSyncService:
 
 def _sync_payload() -> dict[str, object]:
     return {
+        "keep_browser_open": True,
+        "preserve_review_context": True,
         "market_contract": {
             "tradingview_symbol": "BITGET:BTCUSDT.P",
             "timeframe": "1H",
@@ -74,7 +103,22 @@ class DB1ReviewTradingViewApiTests(unittest.TestCase):
 
         self.assertEqual(payload["status"], "ok")
         self.assertEqual(payload["placed_tool"], "LineToolFibRetracement")
+        self.assertEqual(payload["chart_theme"]["mode"], "dark")
+        self.assertEqual(
+            payload["chart_theme"]["implementation"],
+            "preload-theme-bootstrap-plus-chart-properties",
+        )
+        self.assertEqual(
+            payload["chart_time_alignment"]["effective_chart_timezone"],
+            "Asia/Nicosia",
+        )
+        self.assertEqual(payload["review_style"]["line_color"], "#FFFFFF")
+        self.assertEqual(payload["review_tool"]["source"], "proposal-render")
+        self.assertIs(payload["review_tool"]["selected_for_editing"], True)
+        self.assertEqual(payload["review_tool"]["selection_count"], 1)
         self.assertEqual(len(fake_service.payloads), 1)
+        self.assertIs(fake_service.payloads[0]["keep_browser_open"], True)
+        self.assertIs(fake_service.payloads[0]["preserve_review_context"], True)
 
     def test_post_tradingview_sync_rejects_non_object_payload(self) -> None:
         fake_service = FakeTradingViewSyncService()

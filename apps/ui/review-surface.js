@@ -13,6 +13,10 @@
     syncFailed: false,
     syncFailureReason: "",
     tradingViewStatus: "Waiting to sync current structure.",
+    liveReviewAnchors: null,
+    liveReviewToolSource: null,
+    liveReviewToolMatchesProposal: null,
+    liveReviewToolReused: false,
     reviewNoteDraft: "",
     sessionTrail: [],
   };
@@ -165,6 +169,10 @@
       state.syncInFlight = false;
       state.syncFailed = false;
       state.syncFailureReason = "";
+      state.liveReviewAnchors = null;
+      state.liveReviewToolSource = null;
+      state.liveReviewToolMatchesProposal = null;
+      state.liveReviewToolReused = false;
       if (!preserveNote) {
         state.reviewNoteDraft = "";
       }
@@ -216,7 +224,16 @@
 
     state.pendingAction = action;
     persistViewState();
-    const submissionPayload = buildSubmissionPayload(action);
+    let submissionPayload;
+    try {
+      submissionPayload = buildSubmissionPayload(action);
+    } catch (error) {
+      state.pendingAction = null;
+      setStatus(String(error.message || error), "error");
+      persistViewState();
+      render();
+      return;
+    }
     try {
       const response = await fetch(API_BASE_URL + "/db1/review/submissions", {
         method: "POST",
@@ -358,6 +375,10 @@
         sync_in_flight: state.syncInFlight,
         sync_failed: state.syncFailed,
         sync_failure_reason: state.syncFailureReason,
+        live_review_anchors: state.liveReviewAnchors,
+        live_review_tool_source: state.liveReviewToolSource,
+        live_review_tool_matches_proposal: state.liveReviewToolMatchesProposal,
+        live_review_tool_reused: state.liveReviewToolReused,
         review_note_draft: state.reviewNoteDraft,
         last_submission: state.lastSubmission,
       },
@@ -368,22 +389,31 @@
 
   function buildSubmissionPayload(action) {
     const currentStructure = state.currentPayload.current_structure;
-    const proposedAnchorPair = {
-      parent_anchor_source_timestamp:
-        currentStructure.parent_anchor_source_timestamp,
-      parent_anchor_price: Number(currentStructure.parent_anchor_price),
-      terminal_extreme_source_timestamp:
-        currentStructure.terminal_extreme_source_timestamp,
-      terminal_extreme_price: Number(currentStructure.terminal_extreme_price),
-    };
+    const proposedAnchorPair = buildAnchorPairFromStructure(currentStructure);
+    const adjustedAnchorPair = action === "adjusted_accept" ? state.liveReviewAnchors : null;
+
+    if (action === "adjusted_accept" && !adjustedAnchorPair) {
+      throw new Error(
+        "TradingView sync did not return a live fib anchor pair for the current structure. Re-sync before submitting a meh review."
+      );
+    }
 
     return {
       structure_id: currentStructure.structure_id,
       proposed_anchor_pair: proposedAnchorPair,
       review_outcome: action,
-      adjusted_anchor_pair: action === "adjusted_accept" ? proposedAnchorPair : null,
+      adjusted_anchor_pair: adjustedAnchorPair,
       note: state.reviewNoteDraft || null,
       previous_structure_comparison_used: state.previousComparisonUsed,
+    };
+  }
+
+  function buildAnchorPairFromStructure(structure) {
+    return {
+      parent_anchor_source_timestamp: structure.parent_anchor_source_timestamp,
+      parent_anchor_price: Number(structure.parent_anchor_price),
+      terminal_extreme_source_timestamp: structure.terminal_extreme_source_timestamp,
+      terminal_extreme_price: Number(structure.terminal_extreme_price),
     };
   }
 
@@ -563,6 +593,10 @@
     state.syncInFlight = true;
     state.syncFailed = false;
     state.syncFailureReason = "";
+    state.liveReviewAnchors = null;
+    state.liveReviewToolSource = null;
+    state.liveReviewToolMatchesProposal = null;
+    state.liveReviewToolReused = false;
     state.tradingViewStatus = "Syncing the real TradingView chart...";
     render();
     try {
@@ -572,6 +606,8 @@
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          keep_browser_open: true,
+          preserve_review_context: true,
           market_contract: state.currentPayload.market_contract,
           review_structure: state.currentPayload.current_structure,
         }),
@@ -584,9 +620,30 @@
       }
 
       const payload = await response.json();
+      const reviewTool = payload.review_tool || null;
+      const liveAnchorPair = normaliseAnchorPair(
+        reviewTool && typeof reviewTool === "object" ? reviewTool.anchor_pair : null
+      );
+      if (!liveAnchorPair) {
+        throw new Error(
+          "TradingView sync did not return a live fib anchor pair for the current structure."
+        );
+      }
+
       state.chartReady = true;
       state.syncInFlight = false;
       state.syncFailed = false;
+      state.liveReviewAnchors = liveAnchorPair;
+      state.liveReviewToolSource =
+        reviewTool && typeof reviewTool.source === "string"
+          ? reviewTool.source
+          : "proposal-render";
+      state.liveReviewToolMatchesProposal = Boolean(
+        reviewTool && reviewTool.matches_proposed_anchors !== false
+      );
+      state.liveReviewToolReused = Boolean(
+        reviewTool && reviewTool.reused_existing_tool
+      );
       state.tradingViewStatus =
         "TradingView synced for "
         + payload.structure_id
@@ -594,7 +651,8 @@
         + payload.market_symbol
         + " "
         + payload.timeframe
-        + ".";
+        + ". "
+        + formatReviewToolStatus();
       persistViewState();
       render();
     } catch (error) {
@@ -602,6 +660,10 @@
       state.syncInFlight = false;
       state.syncFailed = true;
       state.syncFailureReason = String(error.message || error);
+      state.liveReviewAnchors = null;
+      state.liveReviewToolSource = null;
+      state.liveReviewToolMatchesProposal = null;
+      state.liveReviewToolReused = false;
       state.tradingViewStatus =
         "TradingView sync failed: "
         + state.syncFailureReason
@@ -804,5 +866,47 @@
     if (tone === "error") {
       elements.statusBanner.classList.add("is-error");
     }
+  }
+
+  function normaliseAnchorPair(value) {
+    if (!value || typeof value !== "object") {
+      return null;
+    }
+
+    const parentAnchorSourceTimestamp = value.parent_anchor_source_timestamp;
+    const parentAnchorPrice = value.parent_anchor_price;
+    const terminalExtremeSourceTimestamp = value.terminal_extreme_source_timestamp;
+    const terminalExtremePrice = value.terminal_extreme_price;
+    if (
+      typeof parentAnchorSourceTimestamp !== "string"
+      || typeof terminalExtremeSourceTimestamp !== "string"
+      || typeof parentAnchorPrice !== "number"
+      || typeof terminalExtremePrice !== "number"
+    ) {
+      return null;
+    }
+
+    return {
+      parent_anchor_source_timestamp: parentAnchorSourceTimestamp,
+      parent_anchor_price: parentAnchorPrice,
+      terminal_extreme_source_timestamp: terminalExtremeSourceTimestamp,
+      terminal_extreme_price: terminalExtremePrice,
+    };
+  }
+
+  function formatReviewToolStatus() {
+    if (!state.liveReviewAnchors) {
+      return "";
+    }
+
+    if (state.liveReviewToolReused && state.liveReviewToolMatchesProposal === false) {
+      return "Live fib preserved with reviewer-adjusted anchors.";
+    }
+
+    if (state.liveReviewToolReused) {
+      return "Live fib preserved for continued review edits.";
+    }
+
+    return "Proposal fib placed and ready for review edits.";
   }
 })();

@@ -32,7 +32,10 @@ class ChartTruthAssetTests(unittest.TestCase):
     def test_chart_truth_script_loads_single_structure_and_uses_canonical_verdict_api(self) -> None:
         script = UI_SCRIPT.read_text(encoding="utf-8")
 
-        self.assertIn("/db1/review/structures?position=1", script)
+        self.assertIn("/db1/review/structures?position=", script)
+        self.assertIn("resolveSelectedPosition", script)
+        self.assertIn('pageParams.get("proof") === "1"', script)
+        self.assertIn("keep_browser_open: proofModeEnabled", script)
         self.assertIn("/db1/review/tradingview/sync", script)
         self.assertIn("verifyRenderTruth", script)
         self.assertIn("selectedVerdict", script)
@@ -43,6 +46,12 @@ class ChartTruthAssetTests(unittest.TestCase):
         self.assertNotIn("localStorage", script)
         self.assertNotIn("/db1/review/submissions", script)
         self.assertNotIn("/db1/review/summary", script)
+
+    def test_chart_truth_styles_support_optional_proof_mode(self) -> None:
+        stylesheet = UI_STYLE.read_text(encoding="utf-8")
+
+        self.assertIn('data-chart-truth-proof-mode="true"', stylesheet)
+        self.assertIn(".chart-truth-verdicts", stylesheet)
 
     def test_chart_truth_stylesheet_exists(self) -> None:
         self.assertTrue(UI_STYLE.exists())

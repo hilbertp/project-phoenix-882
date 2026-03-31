@@ -127,6 +127,8 @@ class FakeReviewApiState:
     def __init__(self, fail_first_sync_for: set[str] | None = None) -> None:
         self.fail_first_sync_for = fail_first_sync_for or set()
         self.sync_attempts: dict[str, int] = {}
+        self.sync_payloads: list[dict[str, object]] = []
+        self.live_anchor_overrides: dict[str, dict[str, object]] = {}
         self.submissions: list[dict[str, object]] = []
         self.chart_truth_verdicts: dict[str, dict[str, object]] = {}
         self._submission_counter = 0
@@ -189,6 +191,7 @@ class FakeReviewApiState:
         }
 
     def sync(self, payload: dict[str, object]) -> tuple[int, dict[str, object]]:
+        self.sync_payloads.append(payload)
         review_structure = payload.get("review_structure")
         if not isinstance(review_structure, dict):
             return HTTPStatus.BAD_REQUEST, {"error": "review_structure must be an object."}
@@ -201,13 +204,47 @@ class FakeReviewApiState:
                 "error": "TradingView sync did not create a fib retracement drawing on the chart.",
             }
 
+        anchor_pair = self.live_anchor_overrides.get(structure_id)
+        if anchor_pair is None:
+            anchor_pair = {
+                "parent_anchor_source_timestamp": review_structure.get(
+                    "parent_anchor_source_timestamp"
+                ),
+                "parent_anchor_price": review_structure.get("parent_anchor_price"),
+                "terminal_extreme_source_timestamp": review_structure.get(
+                    "terminal_extreme_source_timestamp"
+                ),
+                "terminal_extreme_price": review_structure.get("terminal_extreme_price"),
+            }
+
+        proposed_anchor_pair = {
+            "parent_anchor_source_timestamp": review_structure.get(
+                "parent_anchor_source_timestamp"
+            ),
+            "parent_anchor_price": review_structure.get("parent_anchor_price"),
+            "terminal_extreme_source_timestamp": review_structure.get(
+                "terminal_extreme_source_timestamp"
+            ),
+            "terminal_extreme_price": review_structure.get("terminal_extreme_price"),
+        }
+
         return HTTPStatus.ACCEPTED, {
             "status": "ok",
+            "browser_retained": bool(payload.get("keep_browser_open")),
+            "browser_session_reused": attempts > 1,
             "market_symbol": "BITGET:BTCUSDT.P",
             "timeframe": "1H",
             "structure_id": structure_id,
             "placed_tool": "LineToolFibRetracement",
             "chart_title": "BTCUSDT.P proof",
+            "review_tool": {
+                "source": "retained-live-tool" if attempts > 1 else "proposal-render",
+                "reused_existing_tool": attempts > 1,
+                "selected_for_editing": True,
+                "selection_count": 1,
+                "matches_proposed_anchors": anchor_pair == proposed_anchor_pair,
+                "anchor_pair": anchor_pair,
+            },
         }
 
     def get_chart_truth_verdict(self, structure_id: str) -> dict[str, object]:
