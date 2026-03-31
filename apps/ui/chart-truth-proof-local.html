@@ -6,7 +6,9 @@
     <title>DB1 Chart Truth Proof</title>
     <link rel="stylesheet" href="./chart-truth.css" />
     <script>
-      window.DB1_REVIEW_API_BASE_URL = "http://127.0.0.1:8760";
+      const proofParams = new URLSearchParams(window.location.search);
+      window.DB1_REVIEW_API_BASE_URL =
+        proofParams.get("api") || "http://127.0.0.1:8760";
     </script>
   </head>
   <body

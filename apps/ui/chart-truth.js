@@ -3,6 +3,7 @@
   const pageParams = new URLSearchParams(window.location.search);
   const selectedPosition = resolveSelectedPosition(pageParams.get("position"));
   const proofModeEnabled = pageParams.get("proof") === "1";
+  const useTradingViewDefaults = pageParams.get("style") === "standard";
   const body = document.body;
   const state = {
     currentStructureId: "",
@@ -84,6 +85,7 @@
       },
       body: JSON.stringify({
         keep_browser_open: proofModeEnabled,
+        use_tradingview_defaults: useTradingViewDefaults,
         market_contract: {
           tradingview_symbol: marketContract.tradingview_symbol,
           timeframe: marketContract.timeframe,

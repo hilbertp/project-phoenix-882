@@ -134,6 +134,7 @@ class DB1TradingViewServiceTests(unittest.TestCase):
 
         self.assertIs(request.keep_browser_open, False)
         self.assertIs(request.preserve_review_context, False)
+        self.assertIs(request.use_tradingview_defaults, False)
 
     def test_parse_sync_request_accepts_review_context_flags(self) -> None:
         request = _parse_sync_request(
@@ -159,6 +160,30 @@ class DB1TradingViewServiceTests(unittest.TestCase):
 
         self.assertIs(request.keep_browser_open, True)
         self.assertIs(request.preserve_review_context, True)
+        self.assertIs(request.use_tradingview_defaults, False)
+
+    def test_parse_sync_request_accepts_tradingview_default_mode(self) -> None:
+        request = _parse_sync_request(
+            {
+                "use_tradingview_defaults": True,
+                "market_contract": {
+                    "tradingview_symbol": "BITGET:BTCUSDT.P",
+                    "timeframe": "1H",
+                },
+                "review_structure": {
+                    "structure_id": "db1-fib-0001",
+                    "direction": "up",
+                    "parent_anchor_source_timestamp": "2025-12-31T10:00:00",
+                    "parent_anchor_price": 88350.7,
+                    "parent_anchor_kind": "low",
+                    "terminal_extreme_source_timestamp": "2025-12-31T16:00:00",
+                    "terminal_extreme_price": 89180.8,
+                    "terminal_extreme_kind": "high",
+                },
+            }
+        )
+
+        self.assertIs(request.use_tradingview_defaults, True)
 
     def test_sync_structure_keeps_driver_open_when_requested(self) -> None:
         service = _FakeSyncService()
@@ -344,6 +369,38 @@ class DB1TradingViewServiceTests(unittest.TestCase):
         self.assertEqual(review_style["visible_levels"], [0.236, 0.382])
         self.assertEqual(review_style["line_color"], "#123456")
 
+    def test_sync_service_reports_tradingview_default_mode(self) -> None:
+        service = _FakeSyncService()
+
+        response = service.sync_structure(
+            {
+                "keep_browser_open": True,
+                "use_tradingview_defaults": True,
+                "market_contract": {
+                    "tradingview_symbol": "BITGET:BTCUSDT.P",
+                    "timeframe": "1H",
+                },
+                "review_structure": {
+                    "structure_id": "db1-fib-0001",
+                    "direction": "up",
+                    "parent_anchor_source_timestamp": "2025-12-31T10:00:00",
+                    "parent_anchor_price": 88350.7,
+                    "parent_anchor_kind": "low",
+                    "terminal_extreme_source_timestamp": "2025-12-31T16:00:00",
+                    "terminal_extreme_price": 89180.8,
+                    "terminal_extreme_kind": "high",
+                },
+            }
+        )
+
+        chart_theme = cast(dict[str, object], response["chart_theme"])
+        review_style = cast(dict[str, object], response["review_style"])
+        self.assertEqual(chart_theme["mode"], "platform-default")
+        self.assertEqual(chart_theme["implementation"], "tradingview-default")
+        self.assertEqual(review_style["mode"], "tradingview-default")
+        self.assertIsNone(review_style["line_color"])
+        self.assertIsNone(review_style["visible_levels"])
+
     def test_build_render_verification_accepts_chart_timezone_aligned_points(self) -> None:
         verification = _build_render_verification(
             request=_request(),
@@ -414,8 +471,16 @@ class _FakeSyncService(DB1TradingViewSyncService):
             "browser_retained": request.keep_browser_open,
             "browser_session_reused": reuse_browser_session,
             "chart_theme": {
-                "mode": "dark",
-                "implementation": "preload-theme-bootstrap-plus-chart-properties",
+                "mode": (
+                    "platform-default"
+                    if request.use_tradingview_defaults
+                    else "dark"
+                ),
+                "implementation": (
+                    "tradingview-default"
+                    if request.use_tradingview_defaults
+                    else "preload-theme-bootstrap-plus-chart-properties"
+                ),
             },
             "market_symbol": request.market_contract.tradingview_symbol,
             "timeframe": request.market_contract.timeframe,
@@ -423,8 +488,19 @@ class _FakeSyncService(DB1TradingViewSyncService):
             "placed_tool": "LineToolFibRetracement",
             "chart_title": "BTCUSDT.P proof",
             "review_style": {
-                "line_color": self._review_style.line_color,
-                "visible_levels": list(self._review_style.visible_levels),
+                "mode": (
+                    "tradingview-default"
+                    if request.use_tradingview_defaults
+                    else "review-custom"
+                ),
+                "line_color": (
+                    None if request.use_tradingview_defaults else self._review_style.line_color
+                ),
+                "visible_levels": (
+                    None
+                    if request.use_tradingview_defaults
+                    else list(self._review_style.visible_levels)
+                ),
             },
             "review_tool": {
                 "source": "retained-live-tool" if prefer_preserved_review_tool else "proposal-render",

@@ -92,6 +92,7 @@ class TradingViewSyncRequest:
     review_structure: TradingViewReviewStructure
     keep_browser_open: bool = False
     preserve_review_context: bool = False
+    use_tradingview_defaults: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,10 +227,6 @@ class DB1TradingViewSyncService:
         options.binary_location = str(self._chrome_binary)
         driver = cast(Any, webdriver).Chrome(options=options)
         driver.set_window_size(1600, 1200)
-        driver.execute_cdp_cmd(
-            "Page.addScriptToEvaluateOnNewDocument",
-            {"source": _DARK_MODE_BOOTSTRAP_SCRIPT},
-        )
         return driver
 
     def _close_driver(self, driver: Any) -> None:
@@ -258,6 +255,11 @@ class DB1TradingViewSyncService:
             + quote(request.market_contract.tradingview_symbol, safe="")
         )
         try:
+            if not prefer_preserved_review_tool and not request.use_tradingview_defaults:
+                driver.execute_cdp_cmd(
+                    "Page.addScriptToEvaluateOnNewDocument",
+                    {"source": _DARK_MODE_BOOTSTRAP_SCRIPT},
+                )
             if not prefer_preserved_review_tool:
                 driver.get(chart_url)
             driver.execute_cdp_cmd("Page.bringToFront", {})
@@ -280,7 +282,8 @@ class DB1TradingViewSyncService:
                     )
                 ).click()
                 time.sleep(4)
-            self._apply_dark_mode(driver)
+            if not request.use_tradingview_defaults:
+                self._apply_dark_mode(driver)
         except TimeoutException as error:
             raise TradingViewSyncError(
                 "TradingView sync could not reach the required chart controls."
@@ -291,11 +294,13 @@ class DB1TradingViewSyncService:
             request,
             chart_time_zone=chart_time_context.effective_chart_timezone,
         )
-        review_style_state = _build_review_fib_state(
-            market_symbol=request.market_contract.tradingview_symbol,
-            chart_interval=_chart_interval_for_timeframe(request.market_contract.timeframe),
-            review_style=self._review_style,
-        )
+        review_style_state = None
+        if not request.use_tradingview_defaults:
+            review_style_state = _build_review_fib_state(
+                market_symbol=request.market_contract.tradingview_symbol,
+                chart_interval=_chart_interval_for_timeframe(request.market_contract.timeframe),
+                review_style=self._review_style,
+            )
 
         focus_payload = driver.execute_script(
             """
@@ -435,11 +440,13 @@ if (!reusedExistingTool) {
             false,
     );
     target = findExistingReviewTool() || line;
-    const properties = target && typeof target.properties === 'function' ? target.properties() : null;
-    if (!properties || typeof properties.mergePreferences !== 'function') {
-        throw new Error('TradingView fib placement could not access line tool preferences.');
+    if (fibState) {
+        const properties = target && typeof target.properties === 'function' ? target.properties() : null;
+        if (!properties || typeof properties.mergePreferences !== 'function') {
+            throw new Error('TradingView fib placement could not access line tool preferences.');
+        }
+        properties.mergePreferences(fibState);
     }
-    properties.mergePreferences(fibState);
     chartModel.finishLineTool(target);
     if (chartModel.lineBeingCreated()) {
         throw new Error('TradingView fib placement left the drawing in unfinished creation mode.');
@@ -540,8 +547,16 @@ return {
             "browser_retained": request.keep_browser_open,
             "browser_session_reused": reuse_browser_session,
             "chart_theme": {
-                "mode": "dark",
-                "implementation": "preload-theme-bootstrap-plus-chart-properties",
+                "mode": (
+                    "platform-default"
+                    if request.use_tradingview_defaults
+                    else "dark"
+                ),
+                "implementation": (
+                    "tradingview-default"
+                    if request.use_tradingview_defaults
+                    else "preload-theme-bootstrap-plus-chart-properties"
+                ),
             },
             "chart_time_alignment": {
                 "local_system_timezone": chart_time_context.local_system_timezone,
@@ -555,8 +570,19 @@ return {
             "placed_tool": focus_payload["targetType"],
             "chart_title": focus_payload["chartTitle"],
             "review_style": {
-                "line_color": self._review_style.line_color,
-                "visible_levels": list(self._review_style.visible_levels),
+                "mode": (
+                    "tradingview-default"
+                    if request.use_tradingview_defaults
+                    else "review-custom"
+                ),
+                "line_color": (
+                    None if request.use_tradingview_defaults else self._review_style.line_color
+                ),
+                "visible_levels": (
+                    None
+                    if request.use_tradingview_defaults
+                    else list(self._review_style.visible_levels)
+                ),
             },
             "review_tool": {
                 "source": (
@@ -729,6 +755,7 @@ def _parse_sync_request(payload: dict[str, object]) -> TradingViewSyncRequest:
         review_structure=review_structure,
         keep_browser_open=_parse_optional_bool(payload, "keep_browser_open"),
         preserve_review_context=_parse_optional_bool(payload, "preserve_review_context"),
+        use_tradingview_defaults=_parse_optional_bool(payload, "use_tradingview_defaults"),
     )
 
 
