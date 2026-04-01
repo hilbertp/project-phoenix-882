@@ -34,8 +34,10 @@ class ChartTruthAssetTests(unittest.TestCase):
 
         self.assertIn("/db1/review/structures?position=", script)
         self.assertIn("resolveSelectedPosition", script)
+        self.assertIn("resolveVisualVariant", script)
         self.assertIn('pageParams.get("proof") === "1"', script)
         self.assertIn("keep_browser_open: proofModeEnabled", script)
+        self.assertIn("visual_variant: visualVariant", script)
         self.assertIn("/db1/review/tradingview/sync", script)
         self.assertIn("verifyRenderTruth", script)
         self.assertIn("selectedVerdict", script)

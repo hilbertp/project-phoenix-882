@@ -58,6 +58,17 @@ DEFAULT_REVIEW_VISIBLE_FIB_LEVELS = (
     0.236,
     0.0,
 )
+DEFAULT_VISUAL_VARIANT = "review-custom"
+SUPPORTED_VISUAL_VARIANTS = frozenset(
+    {
+        "baseline",
+        "darkmode-only",
+        "custom-levels-only",
+        "labels-prices-only",
+        "white-style-only",
+        "review-custom",
+    }
+)
 
 
 class InvalidTradingViewSyncRequestError(Exception):
@@ -93,6 +104,7 @@ class TradingViewSyncRequest:
     keep_browser_open: bool = False
     preserve_review_context: bool = False
     use_tradingview_defaults: bool = False
+    visual_variant: str = DEFAULT_VISUAL_VARIANT
 
 
 @dataclass(frozen=True, slots=True)
@@ -255,7 +267,9 @@ class DB1TradingViewSyncService:
             + quote(request.market_contract.tradingview_symbol, safe="")
         )
         try:
-            if not prefer_preserved_review_tool and not request.use_tradingview_defaults:
+            if not prefer_preserved_review_tool and _variant_uses_dark_mode(
+                request.visual_variant
+            ):
                 driver.execute_cdp_cmd(
                     "Page.addScriptToEvaluateOnNewDocument",
                     {"source": _DARK_MODE_BOOTSTRAP_SCRIPT},
@@ -282,7 +296,7 @@ class DB1TradingViewSyncService:
                     )
                 ).click()
                 time.sleep(4)
-            if not request.use_tradingview_defaults:
+            if _variant_uses_dark_mode(request.visual_variant):
                 self._apply_dark_mode(driver)
         except TimeoutException as error:
             raise TradingViewSyncError(
@@ -294,13 +308,12 @@ class DB1TradingViewSyncService:
             request,
             chart_time_zone=chart_time_context.effective_chart_timezone,
         )
-        review_style_state = None
-        if not request.use_tradingview_defaults:
-            review_style_state = _build_review_fib_state(
-                market_symbol=request.market_contract.tradingview_symbol,
-                chart_interval=_chart_interval_for_timeframe(request.market_contract.timeframe),
-                review_style=self._review_style,
-            )
+        review_style_state = _build_variant_fib_state(
+            market_symbol=request.market_contract.tradingview_symbol,
+            chart_interval=_chart_interval_for_timeframe(request.market_contract.timeframe),
+            visual_variant=request.visual_variant,
+            review_style=self._review_style,
+        )
 
         focus_payload = driver.execute_script(
             """
@@ -547,15 +560,9 @@ return {
             "browser_retained": request.keep_browser_open,
             "browser_session_reused": reuse_browser_session,
             "chart_theme": {
-                "mode": (
-                    "platform-default"
-                    if request.use_tradingview_defaults
-                    else "dark"
-                ),
-                "implementation": (
-                    "tradingview-default"
-                    if request.use_tradingview_defaults
-                    else "preload-theme-bootstrap-plus-chart-properties"
+                "mode": _chart_theme_mode_for_variant(request.visual_variant),
+                "implementation": _chart_theme_implementation_for_variant(
+                    request.visual_variant
                 ),
             },
             "chart_time_alignment": {
@@ -569,21 +576,10 @@ return {
             "structure_id": request.review_structure.structure_id,
             "placed_tool": focus_payload["targetType"],
             "chart_title": focus_payload["chartTitle"],
-            "review_style": {
-                "mode": (
-                    "tradingview-default"
-                    if request.use_tradingview_defaults
-                    else "review-custom"
-                ),
-                "line_color": (
-                    None if request.use_tradingview_defaults else self._review_style.line_color
-                ),
-                "visible_levels": (
-                    None
-                    if request.use_tradingview_defaults
-                    else list(self._review_style.visible_levels)
-                ),
-            },
+            "review_style": _review_style_payload_for_variant(
+                request.visual_variant,
+                self._review_style,
+            ),
             "review_tool": {
                 "source": (
                     "retained-live-tool"
@@ -750,12 +746,24 @@ def _parse_sync_request(payload: dict[str, object]) -> TradingViewSyncRequest:
         ),
     )
 
+    use_tradingview_defaults = _parse_optional_bool(payload, "use_tradingview_defaults")
+    visual_variant = _parse_optional_text(payload, "visual_variant")
+    if visual_variant is None:
+        visual_variant = "baseline" if use_tradingview_defaults else DEFAULT_VISUAL_VARIANT
+    if visual_variant not in SUPPORTED_VISUAL_VARIANTS:
+        raise InvalidTradingViewSyncRequestError(
+            "visual_variant must be one of: "
+            + ", ".join(sorted(SUPPORTED_VISUAL_VARIANTS))
+            + "."
+        )
+
     return TradingViewSyncRequest(
         market_contract=market_contract,
         review_structure=review_structure,
         keep_browser_open=_parse_optional_bool(payload, "keep_browser_open"),
         preserve_review_context=_parse_optional_bool(payload, "preserve_review_context"),
-        use_tradingview_defaults=_parse_optional_bool(payload, "use_tradingview_defaults"),
+        use_tradingview_defaults=use_tradingview_defaults,
+        visual_variant=visual_variant,
     )
 
 
@@ -781,6 +789,15 @@ def _parse_optional_bool(payload: dict[str, object], key: str) -> bool:
         return False
     if not isinstance(value, bool):
         raise InvalidTradingViewSyncRequestError(f"{key} must be a boolean.")
+    return value
+
+
+def _parse_optional_text(payload: dict[str, object], key: str) -> str | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or value == "":
+        raise InvalidTradingViewSyncRequestError(f"{key} must be a non-empty string.")
     return value
 
 
@@ -1034,20 +1051,122 @@ def _normalize_chart_time_zone(chart_time_zone: str) -> str:
     return chart_time_zone
 
 
+def _variant_uses_dark_mode(visual_variant: str) -> bool:
+    return visual_variant in {"darkmode-only", "review-custom"}
+
+
+def _chart_theme_mode_for_variant(visual_variant: str) -> str:
+    return "dark" if _variant_uses_dark_mode(visual_variant) else "platform-default"
+
+
+def _chart_theme_implementation_for_variant(visual_variant: str) -> str:
+    return (
+        "preload-theme-bootstrap-plus-chart-properties"
+        if _variant_uses_dark_mode(visual_variant)
+        else "tradingview-default"
+    )
+
+
+def _review_style_payload_for_variant(
+    visual_variant: str,
+    review_style: TradingViewReviewStyle,
+) -> dict[str, object]:
+    if visual_variant == "baseline":
+        return {
+            "mode": "tradingview-default",
+            "line_color": None,
+            "visible_levels": None,
+        }
+    if visual_variant == "darkmode-only":
+        return {
+            "mode": "darkmode-only",
+            "line_color": None,
+            "visible_levels": None,
+        }
+    if visual_variant == "custom-levels-only":
+        return {
+            "mode": "custom-levels-only",
+            "line_color": None,
+            "visible_levels": list(review_style.visible_levels),
+        }
+    if visual_variant == "labels-prices-only":
+        return {
+            "mode": "labels-prices-only",
+            "line_color": None,
+            "visible_levels": None,
+        }
+    if visual_variant == "white-style-only":
+        return {
+            "mode": "white-style-only",
+            "line_color": review_style.line_color,
+            "visible_levels": None,
+        }
+    return {
+        "mode": "review-custom",
+        "line_color": review_style.line_color,
+        "visible_levels": list(review_style.visible_levels),
+    }
+
+
+def _build_variant_fib_state(
+    *,
+    market_symbol: str,
+    chart_interval: str,
+    visual_variant: str,
+    review_style: TradingViewReviewStyle = DEFAULT_REVIEW_FIB_STYLE,
+) -> dict[str, object] | None:
+    if visual_variant == "baseline":
+        return None
+    if visual_variant == "darkmode-only":
+        return None
+    if visual_variant == "custom-levels-only":
+        return _build_review_fib_state(
+            market_symbol=market_symbol,
+            chart_interval=chart_interval,
+            review_style=review_style,
+            apply_levels=True,
+            apply_visibility=False,
+            apply_white_style=False,
+        )
+    if visual_variant == "labels-prices-only":
+        return _build_review_fib_state(
+            market_symbol=market_symbol,
+            chart_interval=chart_interval,
+            review_style=review_style,
+            apply_levels=False,
+            apply_visibility=True,
+            apply_white_style=False,
+        )
+    if visual_variant == "white-style-only":
+        return _build_review_fib_state(
+            market_symbol=market_symbol,
+            chart_interval=chart_interval,
+            review_style=review_style,
+            apply_levels=False,
+            apply_visibility=False,
+            apply_white_style=True,
+        )
+    return _build_review_fib_state(
+        market_symbol=market_symbol,
+        chart_interval=chart_interval,
+        review_style=review_style,
+    )
+
+
 def _build_review_fib_state(
     *,
     market_symbol: str,
     chart_interval: str,
     review_style: TradingViewReviewStyle = DEFAULT_REVIEW_FIB_STYLE,
+    apply_levels: bool = True,
+    apply_visibility: bool = True,
+    apply_white_style: bool = True,
 ) -> dict[str, object]:
     visible_levels = frozenset(review_style.visible_levels)
     state: dict[str, object] = {
         "symbol": market_symbol,
         "interval": chart_interval,
         "reverse": False,
-        "showCoeffs": True,
-        "showPrices": True,
-        "showText": True,
         "fillBackground": False,
         "transparency": 100,
         "extendLines": False,
@@ -1059,24 +1178,33 @@ def _build_review_fib_state(
         "coeffsAsPercents": False,
         "fibLevelsBasedOnLogScale": False,
         "labelFontSize": 12,
-        "levelsStyle": {
+    }
+
+    if apply_visibility:
+        state["showCoeffs"] = True
+        state["showPrices"] = True
+        state["showText"] = True
+
+    if apply_white_style:
+        state["levelsStyle"] = {
             "linestyle": 0,
             "linewidth": 2,
-        },
-        "trendline": {
+        }
+        state["trendline"] = {
             "color": review_style.line_color,
             "linestyle": 0,
             "linewidth": 2,
             "visible": True,
-        },
-    }
+        }
 
-    for index, level_value in enumerate(REVIEW_FIB_LEVEL_SEQUENCE, start=1):
-        state[f"level{index}"] = [
-            level_value,
-            review_style.line_color,
-            level_value in visible_levels,
-            "",
-        ]
+    if apply_levels:
+        line_color = review_style.line_color if apply_white_style else "#000000"
+        for index, level_value in enumerate(REVIEW_FIB_LEVEL_SEQUENCE, start=1):
+            state[f"level{index}"] = [
+                level_value,
+                line_color,
+                level_value in visible_levels,
+                "",
+            ]
 
     return state
