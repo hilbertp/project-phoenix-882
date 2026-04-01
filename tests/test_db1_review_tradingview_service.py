@@ -15,10 +15,13 @@ from apps.api.db1_review_tradingview.service import (
     TradingViewSyncError,
     TradingViewSyncRequest,
     _build_anchor_pair_from_line_tool_state,
+    _chart_theme_implementation_for_variant,
+    _chart_theme_mode_for_variant,
     _build_review_fib_state,
     _build_expected_line_tool_points,
     _build_render_verification,
     _parse_sync_request,
+    _review_style_payload_for_variant,
 )
 
 
@@ -134,6 +137,8 @@ class DB1TradingViewServiceTests(unittest.TestCase):
 
         self.assertIs(request.keep_browser_open, False)
         self.assertIs(request.preserve_review_context, False)
+        self.assertIs(request.use_tradingview_defaults, False)
+        self.assertEqual(request.visual_variant, "review-custom")
 
     def test_parse_sync_request_accepts_review_context_flags(self) -> None:
         request = _parse_sync_request(
@@ -159,6 +164,55 @@ class DB1TradingViewServiceTests(unittest.TestCase):
 
         self.assertIs(request.keep_browser_open, True)
         self.assertIs(request.preserve_review_context, True)
+        self.assertIs(request.use_tradingview_defaults, False)
+        self.assertEqual(request.visual_variant, "review-custom")
+
+    def test_parse_sync_request_accepts_tradingview_default_mode(self) -> None:
+        request = _parse_sync_request(
+            {
+                "use_tradingview_defaults": True,
+                "market_contract": {
+                    "tradingview_symbol": "BITGET:BTCUSDT.P",
+                    "timeframe": "1H",
+                },
+                "review_structure": {
+                    "structure_id": "db1-fib-0001",
+                    "direction": "up",
+                    "parent_anchor_source_timestamp": "2025-12-31T10:00:00",
+                    "parent_anchor_price": 88350.7,
+                    "parent_anchor_kind": "low",
+                    "terminal_extreme_source_timestamp": "2025-12-31T16:00:00",
+                    "terminal_extreme_price": 89180.8,
+                    "terminal_extreme_kind": "high",
+                },
+            }
+        )
+
+        self.assertIs(request.use_tradingview_defaults, True)
+        self.assertEqual(request.visual_variant, "baseline")
+
+    def test_parse_sync_request_accepts_visual_variant(self) -> None:
+        request = _parse_sync_request(
+            {
+                "visual_variant": "labels-prices-only",
+                "market_contract": {
+                    "tradingview_symbol": "BITGET:BTCUSDT.P",
+                    "timeframe": "1H",
+                },
+                "review_structure": {
+                    "structure_id": "db1-fib-0001",
+                    "direction": "up",
+                    "parent_anchor_source_timestamp": "2025-12-31T10:00:00",
+                    "parent_anchor_price": 88350.7,
+                    "parent_anchor_kind": "low",
+                    "terminal_extreme_source_timestamp": "2025-12-31T16:00:00",
+                    "terminal_extreme_price": 89180.8,
+                    "terminal_extreme_kind": "high",
+                },
+            }
+        )
+
+        self.assertEqual(request.visual_variant, "labels-prices-only")
 
     def test_sync_structure_keeps_driver_open_when_requested(self) -> None:
         service = _FakeSyncService()
@@ -312,6 +366,35 @@ class DB1TradingViewServiceTests(unittest.TestCase):
         self.assertEqual(state["level8"], [0.941, "#ABCDEF", False, ""])
         self.assertEqual(state["level9"], [1.0, "#ABCDEF", False, ""])
 
+    def test_build_review_fib_state_can_isolate_visibility_changes(self) -> None:
+        state = _build_review_fib_state(
+            market_symbol="BITGET:BTCUSDT.P",
+            chart_interval="60",
+            apply_levels=False,
+            apply_visibility=True,
+            apply_white_style=False,
+        )
+
+        self.assertTrue(state["showCoeffs"])
+        self.assertTrue(state["showPrices"])
+        self.assertTrue(state["showText"])
+        self.assertNotIn("level1", state)
+        self.assertNotIn("trendline", state)
+
+    def test_build_review_fib_state_can_isolate_white_style_changes(self) -> None:
+        state = _build_review_fib_state(
+            market_symbol="BITGET:BTCUSDT.P",
+            chart_interval="60",
+            apply_levels=False,
+            apply_visibility=False,
+            apply_white_style=True,
+        )
+
+        trendline = cast(dict[str, object], state["trendline"])
+        self.assertEqual(trendline["color"], DEFAULT_REVIEW_FIB_LINE_COLOR)
+        self.assertNotIn("showPrices", state)
+        self.assertNotIn("level1", state)
+
     def test_sync_service_uses_configured_review_style(self) -> None:
         service = _FakeSyncService(
             review_style=TradingViewReviewStyle(
@@ -343,6 +426,66 @@ class DB1TradingViewServiceTests(unittest.TestCase):
         review_style = cast(dict[str, object], response["review_style"])
         self.assertEqual(review_style["visible_levels"], [0.236, 0.382])
         self.assertEqual(review_style["line_color"], "#123456")
+
+    def test_sync_service_reports_tradingview_default_mode(self) -> None:
+        service = _FakeSyncService()
+
+        response = service.sync_structure(
+            {
+                "keep_browser_open": True,
+                "use_tradingview_defaults": True,
+                "market_contract": {
+                    "tradingview_symbol": "BITGET:BTCUSDT.P",
+                    "timeframe": "1H",
+                },
+                "review_structure": {
+                    "structure_id": "db1-fib-0001",
+                    "direction": "up",
+                    "parent_anchor_source_timestamp": "2025-12-31T10:00:00",
+                    "parent_anchor_price": 88350.7,
+                    "parent_anchor_kind": "low",
+                    "terminal_extreme_source_timestamp": "2025-12-31T16:00:00",
+                    "terminal_extreme_price": 89180.8,
+                    "terminal_extreme_kind": "high",
+                },
+            }
+        )
+
+        chart_theme = cast(dict[str, object], response["chart_theme"])
+        review_style = cast(dict[str, object], response["review_style"])
+        self.assertEqual(chart_theme["mode"], "platform-default")
+        self.assertEqual(chart_theme["implementation"], "tradingview-default")
+        self.assertEqual(review_style["mode"], "tradingview-default")
+        self.assertIsNone(review_style["line_color"])
+        self.assertIsNone(review_style["visible_levels"])
+
+    def test_sync_service_reports_isolated_variant_metadata(self) -> None:
+        service = _FakeSyncService()
+
+        response = service.sync_structure(
+            {
+                "visual_variant": "darkmode-only",
+                "market_contract": {
+                    "tradingview_symbol": "BITGET:BTCUSDT.P",
+                    "timeframe": "1H",
+                },
+                "review_structure": {
+                    "structure_id": "db1-fib-0001",
+                    "direction": "up",
+                    "parent_anchor_source_timestamp": "2025-12-31T10:00:00",
+                    "parent_anchor_price": 88350.7,
+                    "parent_anchor_kind": "low",
+                    "terminal_extreme_source_timestamp": "2025-12-31T16:00:00",
+                    "terminal_extreme_price": 89180.8,
+                    "terminal_extreme_kind": "high",
+                },
+            }
+        )
+
+        chart_theme = cast(dict[str, object], response["chart_theme"])
+        review_style = cast(dict[str, object], response["review_style"])
+        self.assertEqual(chart_theme["mode"], "dark")
+        self.assertEqual(review_style["mode"], "darkmode-only")
 
     def test_build_render_verification_accepts_chart_timezone_aligned_points(self) -> None:
         verification = _build_render_verification(
@@ -414,18 +557,20 @@ class _FakeSyncService(DB1TradingViewSyncService):
             "browser_retained": request.keep_browser_open,
             "browser_session_reused": reuse_browser_session,
             "chart_theme": {
-                "mode": "dark",
-                "implementation": "preload-theme-bootstrap-plus-chart-properties",
+                "mode": _chart_theme_mode_for_variant(request.visual_variant),
+                "implementation": _chart_theme_implementation_for_variant(
+                    request.visual_variant
+                ),
             },
             "market_symbol": request.market_contract.tradingview_symbol,
             "timeframe": request.market_contract.timeframe,
             "structure_id": request.review_structure.structure_id,
             "placed_tool": "LineToolFibRetracement",
             "chart_title": "BTCUSDT.P proof",
-            "review_style": {
-                "line_color": self._review_style.line_color,
-                "visible_levels": list(self._review_style.visible_levels),
-            },
+            "review_style": _review_style_payload_for_variant(
+                request.visual_variant,
+                self._review_style,
+            ),
             "review_tool": {
                 "source": "retained-live-tool" if prefer_preserved_review_tool else "proposal-render",
                 "reused_existing_tool": prefer_preserved_review_tool,

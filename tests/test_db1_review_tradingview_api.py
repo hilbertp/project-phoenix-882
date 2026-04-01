@@ -11,7 +11,13 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from apps.api.db1_review_read.http_app import create_server
-from apps.api.db1_review_tradingview.service import TradingViewSyncError
+from apps.api.db1_review_tradingview.service import (
+    DEFAULT_REVIEW_FIB_STYLE,
+    TradingViewSyncError,
+    _chart_theme_implementation_for_variant,
+    _chart_theme_mode_for_variant,
+    _review_style_payload_for_variant,
+)
 
 
 class FakeTradingViewSyncService:
@@ -24,8 +30,12 @@ class FakeTradingViewSyncService:
             "status": "ok",
             "chart_url": "https://www.tradingview.com/chart/?symbol=BITGET%3ABTCUSDT.P",
             "chart_theme": {
-                "mode": "dark",
-                "implementation": "preload-theme-bootstrap-plus-chart-properties",
+                "mode": _chart_theme_mode_for_variant(
+                    str(payload.get("visual_variant") or ("baseline" if payload.get("use_tradingview_defaults") else "review-custom"))
+                ),
+                "implementation": _chart_theme_implementation_for_variant(
+                    str(payload.get("visual_variant") or ("baseline" if payload.get("use_tradingview_defaults") else "review-custom"))
+                ),
             },
             "chart_time_alignment": {
                 "local_system_timezone": "Asia/Nicosia",
@@ -39,8 +49,10 @@ class FakeTradingViewSyncService:
             "placed_tool": "LineToolFibRetracement",
             "chart_title": "BTCUSDT.P proof",
             "review_style": {
-                "line_color": "#FFFFFF",
-                "visible_levels": [1.0, 0.941, 0.882, 0.786, 0.618, 0.5, 0.382, 0.236, 0.0],
+                **_review_style_payload_for_variant(
+                    str(payload.get("visual_variant") or ("baseline" if payload.get("use_tradingview_defaults") else "review-custom")),
+                    DEFAULT_REVIEW_FIB_STYLE,
+                ),
             },
             "review_tool": {
                 "source": "proposal-render",
@@ -113,12 +125,60 @@ class DB1ReviewTradingViewApiTests(unittest.TestCase):
             "Asia/Nicosia",
         )
         self.assertEqual(payload["review_style"]["line_color"], "#FFFFFF")
+        self.assertEqual(payload["review_style"]["mode"], "review-custom")
         self.assertEqual(payload["review_tool"]["source"], "proposal-render")
         self.assertIs(payload["review_tool"]["selected_for_editing"], True)
         self.assertEqual(payload["review_tool"]["selection_count"], 1)
         self.assertEqual(len(fake_service.payloads), 1)
         self.assertIs(fake_service.payloads[0]["keep_browser_open"], True)
         self.assertIs(fake_service.payloads[0]["preserve_review_context"], True)
+
+    def test_post_tradingview_sync_accepts_tradingview_default_mode(self) -> None:
+        fake_service = FakeTradingViewSyncService()
+        sync_payload = _sync_payload()
+        sync_payload["use_tradingview_defaults"] = True
+        with tempfile.TemporaryDirectory() as temp_dir:
+            server, thread = _start_server(Path(temp_dir), fake_service)
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/db1/review/tradingview/sync",
+                    data=json.dumps(sync_payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                _stop_server(server, thread)
+
+        self.assertEqual(payload["chart_theme"]["mode"], "platform-default")
+        self.assertEqual(payload["chart_theme"]["implementation"], "tradingview-default")
+        self.assertEqual(payload["review_style"]["mode"], "tradingview-default")
+        self.assertIsNone(payload["review_style"]["line_color"])
+        self.assertIsNone(payload["review_style"]["visible_levels"])
+        self.assertIs(fake_service.payloads[0]["use_tradingview_defaults"], True)
+
+    def test_post_tradingview_sync_accepts_isolated_variant(self) -> None:
+        fake_service = FakeTradingViewSyncService()
+        sync_payload = _sync_payload()
+        sync_payload["visual_variant"] = "labels-prices-only"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            server, thread = _start_server(Path(temp_dir), fake_service)
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/db1/review/tradingview/sync",
+                    data=json.dumps(sync_payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                _stop_server(server, thread)
+
+        self.assertEqual(payload["review_style"]["mode"], "labels-prices-only")
+        self.assertEqual(payload["chart_theme"]["mode"], "platform-default")
+        self.assertEqual(fake_service.payloads[0]["visual_variant"], "labels-prices-only")
 
     def test_post_tradingview_sync_rejects_non_object_payload(self) -> None:
         fake_service = FakeTradingViewSyncService()
