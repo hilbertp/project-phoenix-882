@@ -1,192 +1,178 @@
-# Git And GitHub Workflow
+# Project Phoenix Git and GitHub Workflow
 
-This workflow keeps reviewable slices small, explicit, and recoverable. It is designed for normal day-to-day work in Project Phoenix, where context can be lost across terminals, editor windows, or handoffs.
+This workflow is intentionally lightweight. It exists to keep reviewable slices clean, reduce branch mistakes, and make it easy to resume work when context is lost.
+
+## Branch action must be stated first
+
+Before any implementation handoff, one of these must be decided explicitly:
+
+- stay on current branch
+- create new branch
+- checkpoint current branch first, then create new branch
 
 ## Branch naming
 
-Create every reviewable slice from `main` on a fresh branch.
+Create every reviewable slice from `main` on a new branch.
 
 - Implementation slice: `area-short-slice-name`
 - Spike: `spike-area-short-question`
 - Infra or process slice: `infra-short-slice-name`
-- Docs-only slice: `docs-short-slice-name`
 
-Use lowercase words with hyphens. Keep names specific enough that the branch tells you what is under review.
+Keep names short, concrete, and tied to one reviewable outcome.
 
 Examples:
 
-- `db1-s1-raw-1h-swing-detection`
-- `db1-s2-candidate-leg-scoring`
+- `db1-s1-swing-read-surface`
+- `db1-review-writeback-validation`
+- `spike-db1-s2-leg-ranking-shape`
 - `infra-github-workflow-contributor-process`
-- `spike-db1-s2-leg-ranking-options`
 
-## Stay on a branch or create a new one
+## When to stay on a branch vs create a new one
 
-Stay on the current branch only if the new work is still part of the same reviewable slice and would belong in the same PR.
+Stay on the same branch only when the work is still the same reviewable slice.
 
-Create a new branch if any of the following is true:
+Exact rule: same merge decision = same branch; new reviewable slice = new branch.
 
-- the goal changed
-- the reviewer would want a separate decision
-- the work touches a different slice, lane, or acceptance target
-- the current slice is already in review or ready for review
-- you are tempted to say "while I am here"
+Create a new branch if any of these become true:
 
-Rule of thumb: one branch should map to one PR and one clear review object.
+- the goal changes
+- the reviewer would need a separate decision
+- the work introduces a different acceptance object
+- the current branch is already in review and new work would mix concerns
+
+Rule of thumb: one branch should answer one review question.
 
 ## Spikes vs implementation slices
 
-Use a spike branch when the goal is to answer a question, test an approach, or reduce uncertainty.
+Use a spike branch when the goal is learning, shape validation, or technical proof rather than merge-ready implementation.
 
-- Branch name starts with `spike-`
-- Output is notes, evidence, or a narrow proof
-- Do not quietly grow a spike into production implementation
+- Spike branches start with `spike-`
+- A spike may produce notes, findings, or a narrow prototype
+- Do not keep building production implementation on top of a spike branch once the answer is known
+- If the spike leads to real implementation, start a fresh implementation branch from `main`
+- If a spike result is worth keeping, checkpoint and push the spike branch, but do not continue implementation on that same branch; start a fresh implementation branch from `main`
 
-Use an implementation branch when the goal is a reviewable repository change that can merge.
+Use an implementation branch when the goal is a reviewable repo change that can be accepted and merged.
 
-- Branch name does not start with `spike-`
-- Output is production-facing code, docs, or infrastructure changes intended to merge
+## Required preflight before work starts
 
-If a spike proves the path forward, start a new implementation branch from `main`. Do not continue the implementation on the spike branch.
+Before starting any slice:
 
-## Preflight before starting work
-
-Before writing code or docs:
-
-1. Make sure the current slice is merged or intentionally parked.
-2. Return to `main` and update it.
-3. Confirm the working tree is clean.
-4. Create a new branch from `main`.
-5. State the slice goal in one sentence before you start.
+1. make sure the previous slice is either merged or explicitly parked with checkpoint commit and push
+2. update local `main`
+3. create a new branch from `main`
+4. confirm the branch name matches the slice goal
+5. write down the review object in one sentence before coding
 
 Minimal command sequence:
 
 ```bash
 git checkout main
 git pull --ff-only origin main
-git status --short
-git checkout -b <new-branch-name>
+git checkout -b area-short-slice-name
 ```
 
-If `git status --short` is not clean, stop and either finish, park, or discard the old work before starting the new slice.
-
-## Required working sequence
+## Required slice sequence
 
 Every reviewable slice should follow this order:
 
-1. branch
-2. implement
+1. branch from `main`
+2. implement one slice
 3. checkpoint commit
-4. push
-5. PR
-6. stakeholder acceptance
+4. push branch
+5. open PR
+6. get stakeholder acceptance
 7. merge
 
-Do not start the next slice before the current slice is either merged or intentionally parked with a checkpoint commit and push.
+Do not start a new slice until the previous slice is either merged or explicitly parked with checkpoint commit and push.
 
 ## Safe parking rule for unfinished work
 
-If you need to switch focus before the slice is merged, park the branch safely.
+If you must switch focus before a slice is merged, park it safely.
 
 Required parking sequence:
 
-1. clean up obviously broken partial edits
-2. commit a checkpoint with a truthful message
+1. make the branch state coherent
+2. create a checkpoint commit with a message that says what is done and what remains
 3. push the branch
-4. leave a short note in the PR description or branch context about what remains
+4. leave a short note in the PR body or branch context if a PR already exists
 
-Checkpoint commit message examples:
+Example checkpoint commit messages:
 
-- `checkpoint: DB1.S2 candidate leg scoring surface wired, review notes pending`
-- `checkpoint: spike results captured, ranking comparison incomplete`
+- `checkpoint: db1 review summary API wired, tests still pending`
+- `checkpoint: spike captured candidate leg scoring options`
 
-Do not leave important work only in local uncommitted changes.
+Do not leave important slice state only in local uncommitted changes.
 
 ## Before opening a PR
 
-Before creating the PR:
+Before PR creation:
 
-1. confirm the branch still represents one reviewable slice
-2. confirm the branch is pushed
-3. confirm the diff does not contain unrelated cleanup
-4. add checkpoint or test evidence
-5. fill the PR template with included and excluded scope
-
-The PR should make it easy for a reviewer to answer: what is the slice, what changed, what did not change, and what evidence supports it.
+1. confirm the branch still contains one slice only
+2. remove unrelated edits
+3. run the relevant checks for the slice
+4. make a checkpoint commit if the latest local state is not committed
+5. push the branch
+6. open the PR with a clear review object
 
 ## Before merge
 
-Before merging:
+Before merge:
 
-1. stakeholder acceptance exists for the stated review object
-2. open questions are resolved or explicitly parked for later
-3. the branch is up to date enough to merge cleanly
-4. the PR description still matches the actual diff
+1. confirm stakeholder acceptance is explicit
+2. confirm the PR describes included and excluded scope
+3. confirm the branch is up to date enough for a safe merge
+4. merge the reviewed slice
+5. do not keep adding new work to the merged branch
 
-Merge the reviewed branch, then stop using it for new work.
+After merge, stop using the merged branch for new work.
 
 ## Rebase or update-from-main rule
 
-Keep this simple.
+Keep this rule simple:
 
-- If your branch is short-lived and `main` has not moved in a way that affects you, finish the slice and merge without extra churn.
-- If `main` changed in a way that conflicts with your slice, update your branch before PR or before merge.
-- If your branch has been open long enough that you no longer trust its base, update it.
+- Use the repo's normal update path consistently
+- Do not rebase just for ceremony
+- Update from `main` only when needed for clean review or merge
 
-Practical rule:
-
-1. update from `main` before opening the PR if there are likely conflicts or stale assumptions
-2. update again before merge if the PR no longer merges cleanly
-
-Prefer one clean rebase onto `main` for a small local branch:
-
-```bash
-git checkout main
-git pull --ff-only origin main
-git checkout <your-branch>
-git rebase main
-```
-
-If the branch is already shared and others are working on it, coordinate before rewriting history.
+Use the lightest safe option your team is already using. The main rule is that the PR should merge cleanly and still represent one slice.
 
 ## Resume after merge
 
-After a slice merges:
+After a slice is merged:
 
 1. return to `main`
-2. pull the merged result
-3. delete the local branch if no longer needed
-4. start the next slice from fresh `main`
+2. pull the merged state
+3. start the next slice from fresh `main`
 
 Minimal command sequence:
 
 ```bash
 git checkout main
 git pull --ff-only origin main
-git branch -d <merged-branch>
-git checkout -b <next-branch>
+git checkout -b next-slice-name
 ```
 
-Do not resume new work on the old merged branch.
+Do not continue new slice work on the old branch after merge.
 
 ## DB1-style examples
 
-### Example 1: implementation slice
+Example 1: implementation slice
 
-Goal: add raw 1H swing detection for DB1.S1.
+- Branch: `db1-review-summary-reader`
+- Goal: expose the DB1 review summary reader payload for review use
+- Stay on this branch while the work remains only about the summary reader slice
+- If you next decide to add writeback validation, start a new branch from `main`
 
-- Branch: `db1-s1-raw-1h-swing-detection`
-- Stay on branch while the work remains limited to the DB1.S1 swing detection slice and its tests
-- Before switching away, create a checkpoint commit and push
-- Open one PR for that slice only
-- After acceptance and merge, start the next DB1 slice from fresh `main`
+Example 2: spike then implementation
 
-### Example 2: spike followed by implementation
+- Spike branch: `spike-db1-s2-leg-ranking-shape`
+- Goal: test whether candidate leg ranking should use alternating pivots and simple scoring
+- Once the spike answers the question, start a new branch such as `db1-s2-leg-read-surface` from `main`
+- Do not turn the spike branch into the final implementation branch
 
-Goal: compare ranking ideas for DB1.S2 candidate legs.
+Example 3: parked work stays parked
 
-- Spike branch: `spike-db1-s2-leg-ranking-options`
-- Use the spike to compare methods and capture evidence
-- When the ranking direction is chosen, start `db1-s2-candidate-leg-scoring` from `main`
-- Do not continue implementation on the spike branch
-- Open the PR only from the implementation branch
+- Parked branch: `db1-s1-raw-1h-swing-detection`
+- If that branch is checkpointed and pushed but not merged, it must not be reused for `db1-s2-candidate-leg-scoring`
+- The `db1-s2-candidate-leg-scoring` slice must start from `main` on a new branch

@@ -1,45 +1,35 @@
-# Pull Request
-
 ## Slice Name
 
-<!-- One reviewable slice. Keep it specific. -->
+<!-- Name the reviewable slice in one short line. -->
 
 ## Branch Name
 
-<!-- Exact branch under review. -->
+<!-- Exact branch name for this PR. -->
 
 ## Goal
 
-<!-- One sentence describing what this slice is meant to accomplish. -->
+<!-- State the single review object this PR is trying to achieve. -->
 
 ## Scope Included
 
-<!-- Flat list of what is intentionally in this PR. -->
-
--
+<!-- List what is intentionally part of this slice. -->
 
 ## Scope Excluded
 
-<!-- Flat list of what is intentionally out of scope for this PR. -->
-
--
+<!-- List what is intentionally not part of this slice. -->
 
 ## Stakeholder Review Object
 
-<!-- What exactly should the reviewer accept or reject? -->
+<!-- Say what the stakeholder is being asked to accept. -->
 
 ## Checkpoint / Test Evidence
 
-<!-- Commands run, artifacts checked, or other evidence that supports the slice. -->
+<!-- Note the checks, artifacts, or manual evidence used for this slice. -->
 
--
+## Merge Decision
 
-## Merge Readiness
+<!-- Choose exactly one state for this PR. -->
 
-<!-- Confirm the branch is review-ready. -->
-
-- [ ] Branch is pushed
-- [ ] Diff is limited to this slice
-- [ ] Included and excluded scope are accurate
-- [ ] Required evidence is attached
-- [ ] Ready to merge after stakeholder acceptance
+- ready to merge
+- ready for stakeholder review only
+- parked, not mergeable yet
