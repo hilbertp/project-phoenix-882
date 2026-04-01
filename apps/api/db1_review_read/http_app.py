@@ -13,6 +13,10 @@ from apps.api.db1_review_read.artifact_reader import (
     ArtifactReadError,
     ArtifactsUnavailableError,
 )
+from apps.api.db1_s1_swing_read.service import (
+    DB1S1SwingReadError,
+    DB1S1SwingReadService,
+)
 from apps.api.db1_review_read.service import (
     DB1ReviewReadService,
     InvalidReviewRequestError,
@@ -37,17 +41,24 @@ class TradingViewSyncService(Protocol):
         ...
 
 
+class SwingReadService(Protocol):
+    def get_swing_payload(self) -> dict[str, object]:
+        ...
+
+
 def create_server(
     *,
     host: str,
     port: int,
     artifacts_dir: Path,
     tradingview_sync_service: TradingViewSyncService | None = None,
+    swing_read_service: SwingReadService | None = None,
 ) -> ThreadingHTTPServer:
     service = DB1ReviewReadService(artifacts_dir=artifacts_dir)
     summary_service = DB1ReviewSummaryService(artifacts_dir=artifacts_dir)
     writeback_service = DB1ReviewWritebackService(artifacts_dir=artifacts_dir)
     sync_service = tradingview_sync_service or DB1TradingViewSyncService()
+    swing_service = swing_read_service or DB1S1SwingReadService()
 
     class ReviewRequestHandler(BaseHTTPRequestHandler):
         def do_OPTIONS(self) -> None:
@@ -76,6 +87,16 @@ def create_server(
                     self._write_error(HTTPStatus.SERVICE_UNAVAILABLE, str(error))
                     return
                 except ArtifactReadError as error:
+                    self._write_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(error))
+                    return
+
+                self._write_json(HTTPStatus.OK, payload)
+                return
+
+            if parsed_url.path == "/db1/s1/swings":
+                try:
+                    payload = swing_service.get_swing_payload()
+                except DB1S1SwingReadError as error:
                     self._write_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(error))
                     return
 
@@ -266,6 +287,7 @@ def parsed_path_supported(path: str) -> bool:
     return path in {
         "/db1/review/chart-truth-verdict",
         "/db1/review/structures",
+        "/db1/s1/swings",
         "/db1/review/submissions",
         "/db1/review/summary",
         "/db1/review/tradingview/sync",
