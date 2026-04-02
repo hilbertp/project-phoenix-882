@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DB1.S2 Candidate Leg Scoring</title>
+    <link rel="stylesheet" href="./db1-s2-candidate-legs.css" />
+    <script>
+      const db1s2PageParams = new URLSearchParams(window.location.search);
+      window.DB1_REVIEW_API_BASE_URL =
+        db1s2PageParams.get("api") || "http://127.0.0.1:8000";
+    </script>
+  </head>
+  <body data-db1-s2-state="loading">
+    <main class="s2-shell">
+      <header class="s2-hero">
+        <p class="eyebrow">Discovery Bet 1</p>
+        <h1>DB1.S2 Candidate Leg Scoring</h1>
+        <p id="s2-market-copy" class="hero-copy">Loading market context...</p>
+        <p id="s2-rule-copy" class="detector-copy">Loading leg-construction rule...</p>
+      </header>
+
+      <section class="s2-summary-grid">
+        <article class="summary-card"><p class="card-label">Raw Pivots</p><strong id="s2-raw-pivot-count">-</strong></article>
+        <article class="summary-card"><p class="card-label">Alternating Pivots</p><strong id="s2-alt-pivot-count">-</strong></article>
+        <article class="summary-card"><p class="card-label">Candidate Legs</p><strong id="s2-candidate-count">-</strong></article>
+        <article class="summary-card"><p class="card-label">Shown</p><strong id="s2-displayed-count">-</strong></article>
+      </section>
+
+      <section class="chart-card">
+        <div class="chart-card-header">
+          <div>
+            <p class="card-label">Visual Inspection</p>
+            <h2>Top ranked candidate legs over 1H candles</h2>
+          </div>
+          <div class="chart-toolbar">
+            <div class="chart-controls" role="group" aria-label="Chart inspection controls">
+              <button id="s2-pan-left" class="chart-control-button" type="button">Pan left</button>
+              <button id="s2-pan-right" class="chart-control-button" type="button">Pan right</button>
+              <button id="s2-zoom-in" class="chart-control-button" type="button">Zoom in</button>
+              <button id="s2-zoom-out" class="chart-control-button" type="button">Zoom out</button>
+            </div>
+            <div class="legend">
+              <span class="legend-item"><span class="legend-dot is-high"></span>raw swing high</span>
+              <span class="legend-item"><span class="legend-dot is-low"></span>raw swing low</span>
+              <span class="legend-item"><span class="legend-line"></span>selected candidate leg</span>
+            </div>
+          </div>
+        </div>
+        <p id="s2-viewport-copy" class="viewport-copy">Loading visible window...</p>
+        <div class="chart-scroll">
+          <svg id="s2-chart" class="s2-chart" role="img" aria-label="Candidate leg chart"></svg>
+        </div>
+      </section>
+
+      <section class="table-card">
+        <div class="table-card-header">
+          <div>
+            <p class="card-label">Ranked Candidates</p>
+            <h2>Top leg shortlist</h2>
+          </div>
+        </div>
+        <table class="s2-table">
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Direction</th>
+              <th>Start</th>
+              <th>End</th>
+              <th>Size</th>
+              <th>Cleanliness</th>
+              <th>Prominence</th>
+              <th>Dominance</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody id="s2-candidate-rows">
+            <tr><td colspan="9">Loading candidate legs...</td></tr>
+          </tbody>
+        </table>
+      </section>
+    </main>
+    <script src="./db1-s2-candidate-legs.js"></script>
+  </body>
+</html>
