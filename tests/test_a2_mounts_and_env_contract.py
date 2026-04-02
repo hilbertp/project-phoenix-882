@@ -25,25 +25,24 @@ EXPECTED_ENV_BY_SERVICE = {
         "PHOENIX_ARTIFACTS_DIR": "/storage/artifacts",
     },
 }
+DOCKER_INFO_TIMEOUT_SECONDS = 10
+SCRIPT_TIMEOUT_SECONDS = 30
+COMPOSE_TIMEOUT_SECONDS = 30
 
 
 class A2MountsAndEnvContractTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls) -> None:
+    def setUp(self) -> None:
         if shutil.which("docker") is None:
-            raise unittest.SkipTest("docker is required to run the mount and env contract tests")
+            self.skipTest("docker is required to run the mount and env contract tests")
 
-        daemon_check = subprocess.run(
+        daemon_check = self._run_process(
             ["docker", "info"],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
+            timeout=DOCKER_INFO_TIMEOUT_SECONDS,
+            timeout_context="docker info availability check",
         )
         if daemon_check.returncode != 0:
-            raise unittest.SkipTest("docker daemon is not available for the mount and env contract tests")
+            self.skipTest("docker daemon is not available for the mount and env contract tests")
 
-    def setUp(self) -> None:
         self._run_script(STACK_DOWN_SCRIPT, check=False)
         self._run_script(STACK_UP_SCRIPT)
 
@@ -73,7 +72,7 @@ class A2MountsAndEnvContractTests(unittest.TestCase):
         service: str,
         command: list[str],
     ) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
+        return self._run_process(
             [
                 "docker",
                 "compose",
@@ -84,11 +83,35 @@ class A2MountsAndEnvContractTests(unittest.TestCase):
                 service,
                 *command,
             ],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
+            timeout=COMPOSE_TIMEOUT_SECONDS,
+            timeout_context=f"service command in {service}",
         )
+
+    def _run_process(
+        self,
+        command: list[str],
+        *,
+        timeout: int,
+        timeout_context: str,
+    ) -> subprocess.CompletedProcess[str]:
+        try:
+            return subprocess.run(
+                command,
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as error:
+            stdout = error.stdout or ""
+            stderr = error.stderr or ""
+            self.fail(
+                f"Timed out after {timeout}s during {timeout_context}.\n"
+                f"Command: {' '.join(command)}\n"
+                f"stdout: {stdout}\n"
+                f"stderr: {stderr}"
+            )
 
     def _run_script(
         self,
@@ -96,12 +119,10 @@ class A2MountsAndEnvContractTests(unittest.TestCase):
         *,
         check: bool = True,
     ) -> subprocess.CompletedProcess[str]:
-        result = subprocess.run(
+        result = self._run_process(
             [str(script_path)],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
+            timeout=SCRIPT_TIMEOUT_SECONDS,
+            timeout_context=f"script {script_path.name}",
         )
 
         if check:
