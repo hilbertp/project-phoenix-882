@@ -49,7 +49,10 @@ from apps.worker.discovery_bet_1.human_labels import (
     VERDICT_REJECT,
     append_label,
     apply_overrides,
+    latest_by_key,
+    load_labels,
     make_label,
+    setup_key,
 )
 from apps.worker.discovery_bet_1.pivots import detect_local_pivots
 from apps.worker.discovery_bet_1.run_generator import DEFAULT_INPUT_PATH
@@ -67,7 +70,8 @@ from scripts.place_fibs_tradingview import (
 DETECTOR_PARAMS = {"min_bars": MIN_BARS, "atr_mult": 4.0}
 
 INJECT_PANEL_JS = r"""
-if (document.getElementById('db1-review-panel')) { window.__reviewSeq = window.__reviewSeq || 0; return {ok:true, already:true}; }
+var __oldPanel = document.getElementById('db1-review-panel');
+if (__oldPanel) { __oldPanel.remove(); }  // always rebuild so the latest buttons show
 window.__reviewSeq = 0;
 window.__reviewAction = null;
 const p = document.createElement('div');
@@ -301,14 +305,28 @@ def _capture_adjustment(driver, candles, maps, readback_js=READBACK_FIB_JS):
     return corrected, res
 
 
-def _info_html(i, n, leg, extra=""):
+_VERDICT_BADGE = {
+    "accept": ("&#10003; ACCEPTED", "#26a69a"),
+    "reject": ("&#10007; REJECTED", "#ef5350"),
+    "adjust": ("&#9998; ADJUSTED", "#f0b90b"),
+    "add": ("&#43; ADDED (missing)", "#8957e5"),
+}
+
+
+def _info_html(i, n, leg, extra="", verdict=None):
+    if verdict:
+        txt, col = _VERDICT_BADGE.get(verdict, (verdict.upper(), "#9aa4b2"))
+        badge = f"<div style='font-weight:bold;color:{col};margin-bottom:4px'>{txt}</div>"
+    else:
+        badge = "<div style='color:#6b7785;margin-bottom:4px'>&bull; not reviewed yet</div>"
     head = ""
     if leg.get("candidate"):
         kind = "short" if leg["direction"] == "down" else "long"
         head = (f"<b style='color:#f0b90b'>CANDIDATE missing {kind}</b> &mdash; "
                 f"real setup? Accept / Reject<br>")
     return (
-        head
+        badge
+        + head
         + f"{i + 1} / {n} &nbsp; <b>{leg['direction']}</b><br>"
         f"{leg['parent_ts'][5:16]} &rarr; {leg['term_ts'][5:16]}<br>"
         f"{leg['parent_price']:.0f} &rarr; {leg['term_price']:.0f}"
@@ -375,6 +393,14 @@ def main() -> None:
     driver.execute_script("window.__reviewSeq = 0; window.__reviewAction = null;")
     driver.execute_cdp_cmd("Page.bringToFront", {})
 
+    # Per-setup verdict so the panel shows accepted/rejected/adjusted/added.
+    # Seed from existing labels (matched by anchor key) so prior reviews show too.
+    existing = latest_by_key(load_labels())
+    reviewed = {
+        k: existing[setup_key(s["parent_ts"], s["term_ts"])].verdict
+        for k, s in enumerate(setups)
+        if setup_key(s["parent_ts"], s["term_ts"]) in existing
+    }
     i = 0
     last_seq = 0
 
@@ -384,7 +410,7 @@ def main() -> None:
         driver.execute_script(
             "window.__reviewStatus(arguments[0], arguments[1]);",
             f"DB1 Review  {i + 1}/{len(setups)}",
-            _info_html(i, len(setups), leg, extra),
+            _info_html(i, len(setups), leg, extra, verdict=reviewed.get(i)),
         )
 
     show()
@@ -412,12 +438,14 @@ def main() -> None:
                 # Accepting a candidate = "this missing setup is real" -> add.
                 verdict = VERDICT_ADD if is_cand else VERDICT_ACCEPT
                 append_label(make_label(leg, verdict, detector_params=DETECTOR_PARAMS))
+                reviewed[i] = verdict
                 print(f"  {verdict}  {leg['parent_ts']} -> {leg['term_ts']}")
                 i = (i + 1) % len(setups)
                 show(f"saved: {verdict}")
             elif act == "reject":
                 # Rejecting a candidate = "no real setup here" -> reject (don't loosen for it).
                 append_label(make_label(leg, VERDICT_REJECT, detector_params=DETECTOR_PARAMS))
+                reviewed[i] = VERDICT_REJECT
                 print(f"  reject  {leg['parent_ts']} -> {leg['term_ts']}")
                 i = (i + 1) % len(setups)
                 show("saved: rejected")
@@ -433,6 +461,7 @@ def main() -> None:
                 )
                 print(f"  {verdict}  -> {corrected['direction']} {corrected['parent_ts']} "
                       f"{corrected['parent_price']:.1f} -> {corrected['term_ts']} {corrected['term_price']:.1f}")
+                reviewed[i] = verdict
                 setups[i] = {**leg, **corrected}
                 show(f"saved: {verdict} (snapped to candle extremes)")
             elif act == "report-missed":
