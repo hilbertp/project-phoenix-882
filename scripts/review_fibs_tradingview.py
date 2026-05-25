@@ -254,6 +254,17 @@ def _expand_with_candidates(setups):
     return out
 
 
+def _annotate_span_depth(leg, idx_map, atr):
+    """Attach candle span and ATR depth (the detector's quality gauges)."""
+    pi = idx_map.get(leg["parent_ts"])
+    ti = idx_map.get(leg["term_ts"])
+    if pi is not None and ti is not None:
+        leg["span"] = abs(ti - pi)
+        denom = atr[ti] or atr[pi] or 1.0
+        leg["depth"] = abs(leg["term_price"] - leg["parent_price"]) / denom
+    return leg
+
+
 def _window_name(setups, j, role):
     leg = setups[j]
     pd = f"{leg['parent_ts'][8:10]}-{leg['parent_ts'][5:7]}"
@@ -324,13 +335,18 @@ def _info_html(i, n, leg, extra="", verdict=None):
         kind = "short" if leg["direction"] == "down" else "long"
         head = (f"<b style='color:#f0b90b'>CANDIDATE missing {kind}</b> &mdash; "
                 f"real setup? Accept / Reject<br>")
+    meta = ""
+    if leg.get("span") is not None:
+        meta = (f"<br><b style='color:#cdd9e5'>{leg['span']} candles</b> &middot; "
+                f"<b style='color:#cdd9e5'>{leg['depth']:.1f} ATR</b> deep")
     return (
         badge
         + head
         + f"{i + 1} / {n} &nbsp; <b>{leg['direction']}</b><br>"
         f"{leg['parent_ts'][5:16]} &rarr; {leg['term_ts'][5:16]}<br>"
         f"{leg['parent_price']:.0f} &rarr; {leg['term_price']:.0f}"
-        f"{('<br>' + extra) if extra else ''}"
+        + meta
+        + f"{('<br>' + extra) if extra else ''}"
     )
 
 
@@ -381,6 +397,9 @@ def main() -> None:
             setups[:] = kept
     # Insert CANDIDATE missing legs wherever two same-direction setups sit in a row.
     setups[:] = _expand_with_candidates(setups)
+    idx_map = {c.source_timestamp: k for k, c in enumerate(candles)}
+    for s in setups:
+        _annotate_span_depth(s, idx_map, atr)
     n_cand = sum(1 for s in setups if s.get("candidate"))
     if n_cand:
         print(f"Inserted {n_cand} candidate missing setups (same-direction gaps) to judge.")
