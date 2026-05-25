@@ -35,3 +35,10 @@ The repository currently includes:
 ## Not Fully Built Yet
 
 The repository is still in foundation mode. It does not yet provide a fully built runtime, CI pipeline, Docker workflow, or substantive feature implementation across the application lanes.
+
+## License
+
+Project Phoenix is licensed under the [Apache License, Version 2.0](LICENSE).
+This permissive license supports community contributions while allowing commercial use, private use, redistribution, modification, and proprietary products built from the project, subject to the license terms.
+
+Contributions are accepted under the same Apache-2.0 terms unless explicitly stated otherwise. See [CONTRIBUTING.md](CONTRIBUTING.md) for the inbound contribution note.
