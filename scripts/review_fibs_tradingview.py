@@ -202,17 +202,12 @@ def _window_name(setups, j, role):
     return f"auto{j + 1} {role} {leg['direction']} {pd}->{td}"
 
 
-def _place_window(driver, setups, i, ctx):
-    """Show the previous, current, and next setup as named Object-Tree entries so
-    the reviewer can see context and navigate. Current is marked REVIEWING."""
+def _place_current(driver, setups, i, ctx):
+    """Show ONE Fib at a time -- only the current setup. Overlapping prev/next
+    Fibs made visual review confusing; Back/Next swaps the single chart instead."""
     driver.execute_script(CLEAR_JS)
-    if i - 1 >= 0:
-        _place_one(driver, setups[i - 1], _window_name(setups, i - 1, "(prev)"), ctx)
-    if i + 1 < len(setups):
-        _place_one(driver, setups[i + 1], _window_name(setups, i + 1, "(next)"), ctx)
-    # Place current LAST so it sits on top and is the read-back target.
     placed = _place_one(driver, setups[i], _window_name(setups, i, "<< REVIEWING >>"), ctx)
-    time.sleep(0.3)  # let the custom Fib template settle, then re-apply the names
+    time.sleep(0.3)  # let the custom Fib template settle, then re-apply the name
     driver.execute_script(REAPPLY_NAMES_JS)
     return placed
 
@@ -316,7 +311,7 @@ def main() -> None:
 
     def show(extra=""):
         leg = setups[i]
-        _place_window(driver, setups, i, ctx)
+        _place_current(driver, setups, i, ctx)
         driver.execute_script(
             "window.__reviewStatus(arguments[0], arguments[1]);",
             f"DB1 Review  {i + 1}/{len(setups)}",
