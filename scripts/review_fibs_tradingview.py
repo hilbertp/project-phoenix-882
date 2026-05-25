@@ -416,22 +416,27 @@ def _build_report_html(setups, reviewed):
     from collections import Counter
 
     vc, oc = Counter(), Counter()
-    r_sum, triggered = 0.0, 0
     rows = []
     for i, s in enumerate(setups):
         verdict = reviewed.get(i)
         vc[verdict or "unreviewed"] += 1
         kind = s.get("outcome_kind", "open")
         oc[kind] += 1
-        r = s.get("outcome_r", 0.0)
-        if kind not in ("miss",):
-            triggered += 1
-            r_sum += r
-        rows.append((i + 1, s, verdict, kind, r))
+        rows.append((i + 1, s, verdict, kind, s.get("outcome_r", 0.0)))
 
-    wins = oc.get("win", 0) + oc.get("partial", 0)
-    win_rate = wins / triggered if triggered else 0.0
-    avg_r = r_sum / triggered if triggered else 0.0
+    # Win rate is scored over REAL setups only (candidates aren't trades you take).
+    # Sample N = TRIGGERED trades (0.786 tagged); a shrug/miss is NOT in N.
+    # win rate = (TP1 + TP2 + TP3) / N ; loss rate = losses / N.
+    real = [s for s in setups if not s.get("candidate")]
+    rk = Counter(s.get("outcome_kind", "open") for s in real)
+    tp1, tp2, tp3 = rk.get("scratch", 0), rk.get("partial", 0), rk.get("win", 0)
+    losses, opens, shrug = rk.get("loss", 0), rk.get("open", 0), rk.get("miss", 0)
+    n_sample = tp1 + tp2 + tp3 + losses + opens
+    wins = tp1 + tp2 + tp3
+    win_rate = wins / n_sample if n_sample else 0.0
+    loss_rate = losses / n_sample if n_sample else 0.0
+    rr = [s.get("outcome_r", 0.0) for s in real if s.get("outcome_kind") != "miss"]
+    avg_r = sum(rr) / len(rr) if rr else 0.0
 
     head = (
         f"<h2 style='margin:0 0 10px'>DB1 Review Report &mdash; {len(setups)} setups</h2>"
@@ -441,12 +446,15 @@ def _build_report_html(setups, reviewed):
         f"<b style='color:#f0b90b'>{vc.get('adjust',0)} adjusted</b> &middot; "
         f"<b style='color:#8957e5'>{vc.get('add',0)} added</b> &middot; "
         f"<span style='color:#6b7785'>{vc.get('unreviewed',0)} unreviewed</span></div>"
-        f"<div style='margin-bottom:12px;color:#9aa4b2'>Outcomes: "
-        f"{oc.get('win',0)} win &middot; {oc.get('partial',0)} partial &middot; "
-        f"{oc.get('scratch',0)} scratch &middot; {oc.get('loss',0)} loss &middot; "
-        f"{oc.get('miss',0)} miss/shrug &middot; {oc.get('open',0)} open "
-        f"&nbsp;|&nbsp; <b>win rate {win_rate:.0%}</b> of {triggered} triggered "
-        f"&middot; <b>avg {avg_r:+.2f}R</b></div>"
+        f"<div style='margin-bottom:6px'>"
+        f"<b style='color:#26a69a'>Win rate {win_rate:.0%}</b> &middot; "
+        f"<b style='color:#ef5350'>Loss rate {loss_rate:.0%}</b> "
+        f"&nbsp;(N={n_sample} triggered; {shrug} shrug excluded"
+        f"{f', {opens} open' if opens else ''})</div>"
+        f"<div style='margin-bottom:12px;color:#9aa4b2'>"
+        f"wins = TP1 {tp1} + TP2 {tp2} + TP3 {tp3} = {wins} &middot; "
+        f"losses {losses} &middot; shrug {shrug} &middot; "
+        f"avg {avg_r:+.2f}R per triggered</div>"
     )
     th = ("<tr style='text-align:left;color:#8b949e'><th>#</th><th>id</th><th>dir</th>"
           "<th>parent &rarr; terminal</th><th>span</th><th>ATR</th><th>your feedback</th>"
