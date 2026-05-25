@@ -81,10 +81,10 @@ p.style.cssText = 'position:fixed;top:90px;right:18px;z-index:2147483647;backgro
 function b(label, act, bg, title){ return '<button data-act="'+act+'" title="'+(title||'')+'" style="margin:2px;padding:6px 9px;border:0;border-radius:4px;cursor:pointer;background:'+bg+';color:#fff;font-size:12px">'+label+'</button>'; }
 p.innerHTML =
   '<div id="db1rv-title" style="font-weight:bold;margin-bottom:6px">DB1 Setup Review</div>' +
-  '<div>' + b('◀ Back','back','#363a45') + b('Next ▶','next','#2962ff') + '</div>' +
+  '<div>' + b('◀ Back','back','#363a45','Previous setup') + b('Next ▶','next','#2962ff','Next setup') + '</div>' +
   '<div>' + b('✓ exaaaactly (to the ms)','accept','#26a69a','APPROVE — setup is correct as drawn') + b('✗ wtf','reject','#ef5350','REJECT — not a real setup') + '</div>' +
-  '<div>' + b('✎ Save edit','save','#f0b90b') + b('Done','done','#363a45') + b('ⓘ Info','info','#1f6feb') + '</div>' +
-  '<div>' + b('+ Report missed setup','report-missed','#8957e5') + '</div>' +
+  '<div>' + b('✎ Save edit','save','#f0b90b','Save your re-drawn anchors for THIS setup as a correction') + b('Done','done','#363a45','End the review session') + b('ⓘ Info','info','#1f6feb','Tip: hover any button to see what it does') + '</div>' +
+  '<div>' + b('+ Report missed setup','report-missed','#8957e5','Draw a missed setup with the Fib tool, then click to add it') + '</div>' +
   '<div id="db1rv-info" style="margin-top:7px;font-size:11px;color:#9aa4b2;line-height:1.4"></div>';
 document.body.appendChild(p);
 p.querySelectorAll('button').forEach(function(btn){ btn.onclick = function(){ window.__reviewSeq++; window.__reviewAction = {seq: window.__reviewSeq, action: btn.getAttribute('data-act')}; }; });
@@ -362,19 +362,9 @@ _OUTCOME_COLOR = {
 }
 
 _HELP_HTML = (
-    "<b style='color:#58a6ff'>Buttons</b><br>"
-    "<b>✓ exaaaactly (to the ms)</b> = <b style='color:#26a69a'>APPROVE</b> "
-    "(setup correct as drawn)<br>"
-    "<b>✗ wtf</b> = <b style='color:#ef5350'>REJECT</b> (not a real setup)<br><br>"
-    "<b style='color:#58a6ff'>How your edits are saved</b><br>"
-    "&bull; <b>Fix a setup:</b> drag the current Fib's anchors to the right "
-    "pivots, then <b>Save edit</b>.<br>"
-    "&bull; <b>Add a missed one:</b> draw a NEW Fib with TradingView's Fib tool, "
-    "then <b>+ Report missed</b>.<br>"
-    "The system reads the Fib you changed, <b>snaps</b> it to the exact candle "
-    "high/low, redraws it, and echoes back what it captured. If that echo matches "
-    "what you drew, it's <b>persisted</b> as your feedback. If it's wrong, just "
-    "redraw and click again (latest wins)."
+    "<b style='color:#58a6ff'>Hover any button to see what it does.</b><br>"
+    "e.g. <b>✓ exaaaactly</b> = approve &middot; <b>✗ wtf</b> = reject &middot; "
+    "<b>✎ Save edit</b> = save your re-drawn anchors."
 )
 
 
