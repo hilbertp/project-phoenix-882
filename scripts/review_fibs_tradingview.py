@@ -28,6 +28,10 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -111,6 +115,25 @@ return {ok:true, points: pts.slice(0,2).map(pt=>({epoch: epochOf(pt), price: pt.
 
 CLEAR_JS = "const c=window._exposed_chartWidgetCollection; if(c){c._activeChartWidgetModel.value().removeAllDrawingTools();}"
 
+# A custom Fib template applies after creation and blanks the text we set, so the
+# Object-Tree name (which reads editableText) is lost. Re-apply name = title once
+# the template has settled.
+REAPPLY_NAMES_JS = r"""
+const m = window._exposed_chartWidgetCollection._activeChartWidgetModel.value();
+let n = 0;
+for (const t of m.model().allLineTools()) {
+    const s = t && t.state && t.state();
+    if (!(s && s.type === 'LineToolFibRetracement')) continue;
+    try {
+        const ch = t.properties().childs();
+        const nm = ch.title && ch.title.value && ch.title.value();
+        if (nm && ch.editableText && ch.editableText.setValue) { ch.editableText.setValue(nm); n++; }
+        if (ch.showText && ch.showText.setValue) { ch.showText.setValue(true); }
+    } catch (e) {}
+}
+return n;
+"""
+
 
 def _build_epoch_maps(candles, tznames):
     """epoch_seconds -> candle index, for each candidate chart timezone."""
@@ -140,6 +163,22 @@ def _epoch_to_candle(epoch, maps):
             if d <= 1800 and (best is None or d < best[0]):
                 best = (d, i)
     return best[1] if best else None
+
+
+def _load_recent_range(driver):
+    """Load ~3 months of 1H bars so the recent setups' anchors resolve; the
+    default chart view only loads ~300 bars (about two weeks)."""
+    try:
+        btn = WebDriverWait(driver, 15).until(
+            EC.presence_of_element_located(
+                (By.CSS_SELECTOR, 'button[data-name="date-range-tab-3M"]')
+            )
+        )
+        driver.execute_script("arguments[0].click();", btn)
+        time.sleep(7)
+    except Exception as exc:
+        print(f"warning: 3M range click skipped ({type(exc).__name__}); "
+              "some setups may not place")
 
 
 def _place_one(driver, leg, name, ctx):
@@ -172,7 +211,10 @@ def _place_window(driver, setups, i, ctx):
     if i + 1 < len(setups):
         _place_one(driver, setups[i + 1], _window_name(setups, i + 1, "(next)"), ctx)
     # Place current LAST so it sits on top and is the read-back target.
-    return _place_one(driver, setups[i], _window_name(setups, i, "<< REVIEWING >>"), ctx)
+    placed = _place_one(driver, setups[i], _window_name(setups, i, "<< REVIEWING >>"), ctx)
+    time.sleep(0.3)  # let the custom Fib template settle, then re-apply the names
+    driver.execute_script(REAPPLY_NAMES_JS)
+    return placed
 
 
 def _capture_adjustment(driver, candles, maps):
@@ -241,11 +283,32 @@ def main() -> None:
     if not attached or "tradingview.com/chart" not in driver.current_url:
         driver.get(LAYOUT_URL)
         time.sleep(10)
+    _load_recent_range(driver)
+    # A freshly launched TradingView chart loads only a limited bar window, and
+    # the date-range tabs are not always present to widen it. Keep only setups
+    # whose anchors fall inside the currently-loaded bars so every shown setup
+    # actually places. (Full-history loading is a separate, Codex-owned fix.)
+    loaded_n = driver.execute_script(
+        "let n=0; const c=window._exposed_chartWidgetCollection;"
+        "if(c){c._activeChartWidgetModel.value().model().mainSeries().data().each(()=>{n++});}"
+        " return n;"
+    ) or 0
+    if loaded_n and int(loaded_n) < len(candles):
+        # Margin so the earliest kept setup's anchor is safely inside the loaded
+        # window (the very first loaded bar can be just short of a boundary anchor).
+        cutoff = candles[max(0, len(candles) - int(loaded_n) + 60)].source_timestamp
+        kept = [s for s in setups if s["parent_ts"] >= cutoff and s["term_ts"] >= cutoff]
+        if kept:
+            print(f"Chart has {loaded_n} bars loaded -> reviewing {len(kept)} of "
+                  f"{len(setups)} setups that fall inside that window.")
+            setups[:] = kept
     svc = DB1TradingViewSyncService()
     ctx = svc._detect_chart_time_context(driver)
     maps = _build_epoch_maps(candles, [ctx.effective_chart_timezone, "UTC", "Asia/Nicosia"])
 
     driver.execute_script(INJECT_PANEL_JS)
+    # Reset the panel's action counter so a restart never replays a stale click.
+    driver.execute_script("window.__reviewSeq = 0; window.__reviewAction = null;")
     driver.execute_cdp_cmd("Page.bringToFront", {})
 
     i = 0
