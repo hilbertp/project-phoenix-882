@@ -83,7 +83,7 @@ p.innerHTML =
   '<div id="db1rv-title" style="font-weight:bold;margin-bottom:6px">DB1 Setup Review</div>' +
   '<div>' + b('◀ Back','back','#363a45') + b('Next ▶','next','#2962ff') + '</div>' +
   '<div>' + b('✓ exaaaactly (to the ms)','accept','#26a69a') + b('✗ wtf','reject','#ef5350') + '</div>' +
-  '<div>' + b('✎ Save edit','save','#f0b90b') + b('Done','done','#363a45') + '</div>' +
+  '<div>' + b('✎ Save edit','save','#f0b90b') + b('Done','done','#363a45') + b('ⓘ Info','info','#1f6feb') + '</div>' +
   '<div>' + b('+ Report missed setup','report-missed','#8957e5') + '</div>' +
   '<div id="db1rv-info" style="margin-top:7px;font-size:11px;color:#9aa4b2;line-height:1.4"></div>';
 document.body.appendChild(p);
@@ -361,6 +361,31 @@ _OUTCOME_COLOR = {
     "open": "#58a6ff",
 }
 
+_HELP_HTML = (
+    "<b style='color:#58a6ff'>How your edits are saved</b><br>"
+    "&bull; <b>Fix a setup:</b> drag the current Fib's anchors to the right "
+    "pivots, then <b>Save edit</b>.<br>"
+    "&bull; <b>Add a missed one:</b> draw a NEW Fib with TradingView's Fib tool, "
+    "then <b>+ Report missed</b>.<br>"
+    "The system reads the Fib you changed, <b>snaps</b> it to the exact candle "
+    "high/low, redraws it, and echoes back what it captured. If that echo matches "
+    "what you drew, it's <b>persisted</b> as your feedback. If it's wrong, just "
+    "redraw and click again (latest wins)."
+)
+
+
+def _capture_confirm(leg, what):
+    """Echo back exactly what the system read, so the user can confirm it understood."""
+    pd = leg["parent_ts"][5:16]
+    td = leg["term_ts"][5:16]
+    return (
+        f"<b style='color:#26a69a'>&#10003; {what} &mdash; system read your chart as:</b><br>"
+        f"<b>{leg['direction']}</b> &nbsp; {leg['parent_price']:.0f} ({pd}) "
+        f"&rarr; {leg['term_price']:.0f} ({td})<br>"
+        f"snapped to candle extremes &amp; <b>persisted</b>. "
+        f"Not what you drew? Redraw &amp; click again."
+    )
+
 
 def _info_html(i, n, leg, extra="", verdict=None):
     if verdict:
@@ -513,6 +538,12 @@ def main() -> None:
             elif act == "back":
                 i = (i - 1) % len(setups)
                 show()
+            elif act == "info":
+                driver.execute_script(
+                    "window.__reviewStatus(arguments[0], arguments[1]);",
+                    "DB1 Review — how feedback works",
+                    _HELP_HTML,
+                )
             elif act == "accept":
                 # Accepting a candidate = "this missing setup is real" -> add.
                 verdict = VERDICT_ADD if is_cand else VERDICT_ACCEPT
@@ -542,7 +573,7 @@ def main() -> None:
                       f"{corrected['parent_price']:.1f} -> {corrected['term_ts']} {corrected['term_price']:.1f}")
                 reviewed[i] = verdict
                 setups[i] = {**leg, **corrected}
-                show(f"saved: {verdict} (snapped to candle extremes)")
+                show(_capture_confirm(corrected, "edit saved"))
             elif act == "report-missed":
                 # The human drew a Fib on a setup the detector missed: snap it, add it
                 # to the list, and jump to it so its span/ATR vs the gates explain the miss.
@@ -560,7 +591,7 @@ def main() -> None:
                 print(f"  add (missed)  {corrected['direction']} {corrected['parent_ts']} "
                       f"{corrected['parent_price']:.1f} -> {corrected['term_ts']} {corrected['term_price']:.1f} "
                       f"({corrected.get('span','?')}c {corrected.get('depth',0):.1f}a)")
-                show("added your missed setup to the list")
+                show(_capture_confirm(corrected, "missed setup added"))
             time.sleep(0.2)
     except KeyboardInterrupt:
         print("\nStopped.")
