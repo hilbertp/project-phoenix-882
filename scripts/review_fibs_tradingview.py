@@ -79,6 +79,7 @@ p.innerHTML =
   '<div>' + b('◀ Back','back','#363a45') + b('Next ▶','next','#2962ff') + '</div>' +
   '<div>' + b('✓ Accept','accept','#26a69a') + b('✗ Reject','reject','#ef5350') + '</div>' +
   '<div>' + b('✎ Save edit','save','#f0b90b') + b('Done','done','#363a45') + '</div>' +
+  '<div>' + b('+ Report missed setup','report-missed','#8957e5') + '</div>' +
   '<div id="db1rv-info" style="margin-top:7px;font-size:11px;color:#9aa4b2;line-height:1.4"></div>';
 document.body.appendChild(p);
 p.querySelectorAll('button').forEach(function(btn){ btn.onclick = function(){ window.__reviewSeq++; window.__reviewAction = {seq: window.__reviewSeq, action: btn.getAttribute('data-act')}; }; });
@@ -106,6 +107,34 @@ for (let i=lts.length-1;i>=0;i--){
 }
 if(!fib) fib = fallback;
 if(!fib){ return {ok:false, error:'no fib on chart'}; }
+let pts = null;
+try { pts = fib.points(); } catch(e) {}
+if(!pts || !pts.length){ try { const st=fib.state(); pts = st && st.points; } catch(e) {} }
+if(!pts || pts.length < 2){ return {ok:false, error:'no points'}; }
+function epochOf(pt){ if(pt.index!=null && epochByIndex[pt.index]!=null) return epochByIndex[pt.index]; return pt.time_t!=null?pt.time_t:null; }
+return {ok:true, points: pts.slice(0,2).map(pt=>({epoch: epochOf(pt), price: pt.price}))};
+"""
+
+# Read back a Fib the HUMAN drew (to report a missed setup): the most recent Fib
+# whose name is NOT one of the controller's (auto / CANDIDATE / REVIEWING).
+READBACK_MANUAL_JS = r"""
+const c = window._exposed_chartWidgetCollection;
+if (!c) { return {ok:false, error:'no collection'}; }
+const model = c._activeChartWidgetModel.value();
+const chartModel = model.model();
+const bars = model.mainSeries().data();
+const epochByIndex = {};
+bars.each((index, value) => { epochByIndex[index] = value[0]; });
+const lts = chartModel.allLineTools();
+let fib = null;
+for (let i=lts.length-1;i>=0;i--){
+    const t=lts[i]; const s=t&&t.state&&t.state();
+    if(!(s&&s.type==='LineToolFibRetracement')) continue;
+    let txt='';
+    try { const ch=t.properties().childs(); txt=(ch.editableText&&ch.editableText.value&&ch.editableText.value())||(ch.title&&ch.title.value&&ch.title.value())||''; } catch(e){}
+    if (!/auto\d|CANDIDATE|REVIEWING/.test(String(txt))) { fib = t; break; }
+}
+if(!fib){ return {ok:false, error:'no hand-drawn Fib found -- draw the missed setup with the Fib tool first'}; }
 let pts = null;
 try { pts = fib.points(); } catch(e) {}
 if(!pts || !pts.length){ try { const st=fib.state(); pts = st && st.points; } catch(e) {} }
@@ -241,10 +270,11 @@ def _place_current(driver, setups, i, ctx):
     return placed
 
 
-def _capture_adjustment(driver, candles, maps):
-    """Read the edited Fib back, snap each anchor to its candle's extreme, and
-    return a corrected leg dict (or None if read-back failed)."""
-    res = driver.execute_script(READBACK_FIB_JS)
+def _capture_adjustment(driver, candles, maps, readback_js=READBACK_FIB_JS):
+    """Read a Fib back, snap each anchor to its candle's extreme, and return a
+    leg dict (or None if read-back failed). readback_js selects which Fib:
+    the current REVIEWING one (default) or the human's hand-drawn one."""
+    res = driver.execute_script(readback_js)
     if not (isinstance(res, dict) and res.get("ok")):
         return None, res
     pts = res["points"]
@@ -405,6 +435,16 @@ def main() -> None:
                       f"{corrected['parent_price']:.1f} -> {corrected['term_ts']} {corrected['term_price']:.1f}")
                 setups[i] = {**leg, **corrected}
                 show(f"saved: {verdict} (snapped to candle extremes)")
+            elif act == "report-missed":
+                # The human drew a Fib on a setup the detector missed; file it as add.
+                corrected, res = _capture_adjustment(driver, candles, maps, READBACK_MANUAL_JS)
+                if corrected is None:
+                    show("Draw the missed setup with the Fib tool, then click Report missed.")
+                    continue
+                append_label(make_label(corrected, VERDICT_ADD, detector_params=DETECTOR_PARAMS))
+                print(f"  add (missed)  {corrected['direction']} {corrected['parent_ts']} "
+                      f"{corrected['parent_price']:.1f} -> {corrected['term_ts']} {corrected['term_price']:.1f}")
+                show(f"saved: reported missed {corrected['direction']} setup")
             time.sleep(0.2)
     except KeyboardInterrupt:
         print("\nStopped.")
