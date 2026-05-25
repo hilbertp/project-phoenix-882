@@ -381,6 +381,82 @@ def _capture_confirm(leg, what):
     )
 
 
+_VERDICT_TEXT = {
+    "accept": ("approved", "#26a69a"),
+    "reject": ("rejected", "#ef5350"),
+    "adjust": ("adjusted", "#f0b90b"),
+    "add": ("added (missing)", "#8957e5"),
+}
+
+REPORT_OVERLAY_JS = r"""
+var old = document.getElementById('db1-report'); if (old) old.remove();
+var d = document.createElement('div');
+d.id = 'db1-report';
+d.style.cssText = 'position:fixed;inset:4% 4%;z-index:2147483647;background:#0e1116;color:#e6edf3;border:1px solid #30363d;border-radius:10px;padding:18px;overflow:auto;font:13px -apple-system,sans-serif;box-shadow:0 6px 40px rgba(0,0,0,.75)';
+d.innerHTML = arguments[0] + '<button onclick="this.parentElement.remove()" style="position:fixed;top:6%;right:6%;background:#30363d;color:#fff;border:0;border-radius:6px;padding:6px 12px;cursor:pointer;z-index:2147483647">Close</button>';
+document.body.appendChild(d);
+return {ok:true};
+"""
+
+
+def _build_report_html(setups, reviewed):
+    """A full session report: every setup with the human's feedback and win/loss."""
+    from collections import Counter
+
+    vc, oc = Counter(), Counter()
+    r_sum, triggered = 0.0, 0
+    rows = []
+    for i, s in enumerate(setups):
+        verdict = reviewed.get(i)
+        vc[verdict or "unreviewed"] += 1
+        kind = s.get("outcome_kind", "open")
+        oc[kind] += 1
+        r = s.get("outcome_r", 0.0)
+        if kind not in ("miss",):
+            triggered += 1
+            r_sum += r
+        rows.append((i + 1, s, verdict, kind, r))
+
+    wins = oc.get("win", 0) + oc.get("partial", 0)
+    win_rate = wins / triggered if triggered else 0.0
+    avg_r = r_sum / triggered if triggered else 0.0
+
+    head = (
+        f"<h2 style='margin:0 0 10px'>DB1 Review Report &mdash; {len(setups)} setups</h2>"
+        f"<div style='margin-bottom:6px'>"
+        f"<b style='color:#26a69a'>{vc.get('accept',0)} approved</b> &middot; "
+        f"<b style='color:#ef5350'>{vc.get('reject',0)} rejected</b> &middot; "
+        f"<b style='color:#f0b90b'>{vc.get('adjust',0)} adjusted</b> &middot; "
+        f"<b style='color:#8957e5'>{vc.get('add',0)} added</b> &middot; "
+        f"<span style='color:#6b7785'>{vc.get('unreviewed',0)} unreviewed</span></div>"
+        f"<div style='margin-bottom:12px;color:#9aa4b2'>Outcomes: "
+        f"{oc.get('win',0)} win &middot; {oc.get('partial',0)} partial &middot; "
+        f"{oc.get('scratch',0)} scratch &middot; {oc.get('loss',0)} loss &middot; "
+        f"{oc.get('miss',0)} miss/shrug &middot; {oc.get('open',0)} open "
+        f"&nbsp;|&nbsp; <b>win rate {win_rate:.0%}</b> of {triggered} triggered "
+        f"&middot; <b>avg {avg_r:+.2f}R</b></div>"
+    )
+    th = ("<tr style='text-align:left;color:#8b949e'><th>#</th><th>id</th><th>dir</th>"
+          "<th>parent &rarr; terminal</th><th>span</th><th>ATR</th><th>your feedback</th>"
+          "<th>outcome</th><th>R</th></tr>")
+    trs = []
+    for num, s, verdict, kind, r in rows:
+        vt, vcol = _VERDICT_TEXT.get(verdict, ("&mdash;", "#6b7785"))
+        ocol = _OUTCOME_COLOR.get(kind, "#9aa4b2")
+        trs.append(
+            f"<tr style='border-top:1px solid #21262d'>"
+            f"<td>{num}</td><td>{s.get('id','?')}</td><td>{s['direction']}</td>"
+            f"<td>{s.get('parent_ts','')[5:16]} &rarr; {s.get('term_ts','')[5:16]}</td>"
+            f"<td>{s.get('span','?')}c</td><td>{s.get('depth',0.0):.1f}</td>"
+            f"<td style='color:{vcol};font-weight:bold'>{vt}</td>"
+            f"<td style='color:{ocol}'>{s.get('outcome','')}</td>"
+            f"<td style='color:{ocol}'>{r:+.2f}</td></tr>"
+        )
+    table = (f"<table style='border-collapse:collapse;width:100%;font-size:12px'>{th}"
+             + "".join(trs) + "</table>")
+    return head + table
+
+
 def _info_html(i, n, leg, extra="", verdict=None):
     if verdict:
         txt, col = _VERDICT_BADGE.get(verdict, (verdict.upper(), "#9aa4b2"))
@@ -525,6 +601,20 @@ def main() -> None:
             leg = setups[i]
             is_cand = leg.get("candidate", False)
             if act == "done":
+                report_html = _build_report_html(setups, reviewed)
+                driver.execute_script(REPORT_OVERLAY_JS, report_html)
+                rep = REPO_ROOT / "artifacts" / "discovery_bet_1" / "review_report.html"
+                rep.parent.mkdir(parents=True, exist_ok=True)
+                rep.write_text(
+                    f"<body style='background:#0e1116;margin:0;padding:18px'>{report_html}</body>",
+                    encoding="utf-8",
+                )
+                from collections import Counter
+                vc = Counter(reviewed.get(k) or "unreviewed" for k in range(len(setups)))
+                oc = Counter(s.get("outcome_kind", "open") for s in setups)
+                print(f"Review report -> {rep}")
+                print(f"  feedback: {dict(vc)}")
+                print(f"  outcomes: {dict(oc)}")
                 break
             elif act == "next":
                 i = (i + 1) % len(setups)
