@@ -44,6 +44,7 @@ from apps.worker.discovery_bet_1.atr import calculate_atr14
 from apps.worker.discovery_bet_1.candle_input import load_candle_input
 from apps.worker.discovery_bet_1.human_labels import (
     VERDICT_ACCEPT,
+    VERDICT_ADD,
     VERDICT_ADJUST,
     VERDICT_REJECT,
     append_label,
@@ -195,11 +196,39 @@ def _place_one(driver, leg, name, ctx):
     return False
 
 
+def _missing_candidate(a, b):
+    """The opposite leg implied between two consecutive same-direction setups:
+    a's terminal extreme -> b's parent extreme (the short missing between two longs,
+    or the long missing between two shorts)."""
+    return {
+        "id": "candidate",
+        "candidate": True,
+        "direction": "down" if a["direction"] == "up" else "up",
+        "parent_ts": a["term_ts"], "parent_price": a["term_price"], "parent_kind": a["term_kind"],
+        "term_ts": b["parent_ts"], "term_price": b["parent_price"], "term_kind": b["parent_kind"],
+    }
+
+
+def _expand_with_candidates(setups):
+    """Insert a CANDIDATE missing leg between every pair of consecutive
+    same-direction setups so the reviewer can see and judge it."""
+    out = []
+    for k, leg in enumerate(setups):
+        leg.setdefault("id", f"auto{k + 1}")
+        out.append(leg)
+        if k + 1 < len(setups) and setups[k + 1]["direction"] == leg["direction"]:
+            out.append(_missing_candidate(leg, setups[k + 1]))
+    return out
+
+
 def _window_name(setups, j, role):
     leg = setups[j]
     pd = f"{leg['parent_ts'][8:10]}-{leg['parent_ts'][5:7]}"
     td = f"{leg['term_ts'][8:10]}-{leg['term_ts'][5:7]}"
-    return f"auto{j + 1} {role} {leg['direction']} {pd}->{td}"
+    if leg.get("candidate"):
+        kind = "short" if leg["direction"] == "down" else "long"
+        return f"CANDIDATE missing {kind} {pd}->{td}"
+    return f"{leg.get('id', 'auto' + str(j + 1))} {role} {leg['direction']} {pd}->{td}"
 
 
 def _place_current(driver, setups, i, ctx):
@@ -243,11 +272,16 @@ def _capture_adjustment(driver, candles, maps):
 
 
 def _info_html(i, n, leg, extra=""):
-    span = ""
+    head = ""
+    if leg.get("candidate"):
+        kind = "short" if leg["direction"] == "down" else "long"
+        head = (f"<b style='color:#f0b90b'>CANDIDATE missing {kind}</b> &mdash; "
+                f"real setup? Accept / Reject<br>")
     return (
-        f"{i + 1} / {n} &nbsp; <b>{leg['direction']}</b><br>"
+        head
+        + f"{i + 1} / {n} &nbsp; <b>{leg['direction']}</b><br>"
         f"{leg['parent_ts'][5:16]} &rarr; {leg['term_ts'][5:16]}<br>"
-        f"{leg['parent_price']:.0f} &rarr; {leg['term_price']:.0f}{span}"
+        f"{leg['parent_price']:.0f} &rarr; {leg['term_price']:.0f}"
         f"{('<br>' + extra) if extra else ''}"
     )
 
@@ -297,6 +331,11 @@ def main() -> None:
             print(f"Chart has {loaded_n} bars loaded -> reviewing {len(kept)} of "
                   f"{len(setups)} setups that fall inside that window.")
             setups[:] = kept
+    # Insert CANDIDATE missing legs wherever two same-direction setups sit in a row.
+    setups[:] = _expand_with_candidates(setups)
+    n_cand = sum(1 for s in setups if s.get("candidate"))
+    if n_cand:
+        print(f"Inserted {n_cand} candidate missing setups (same-direction gaps) to judge.")
     svc = DB1TradingViewSyncService()
     ctx = svc._detect_chart_time_context(driver)
     maps = _build_epoch_maps(candles, [ctx.effective_chart_timezone, "UTC", "Asia/Nicosia"])
@@ -330,6 +369,7 @@ def main() -> None:
             last_seq = seq
             act = action.get("action")
             leg = setups[i]
+            is_cand = leg.get("candidate", False)
             if act == "done":
                 break
             elif act == "next":
@@ -339,11 +379,14 @@ def main() -> None:
                 i = (i - 1) % len(setups)
                 show()
             elif act == "accept":
-                append_label(make_label(leg, VERDICT_ACCEPT, detector_params=DETECTOR_PARAMS))
-                print(f"  accept  {leg['parent_ts']} -> {leg['term_ts']}")
+                # Accepting a candidate = "this missing setup is real" -> add.
+                verdict = VERDICT_ADD if is_cand else VERDICT_ACCEPT
+                append_label(make_label(leg, verdict, detector_params=DETECTOR_PARAMS))
+                print(f"  {verdict}  {leg['parent_ts']} -> {leg['term_ts']}")
                 i = (i + 1) % len(setups)
-                show("saved: accepted")
+                show(f"saved: {verdict}")
             elif act == "reject":
+                # Rejecting a candidate = "no real setup here" -> reject (don't loosen for it).
                 append_label(make_label(leg, VERDICT_REJECT, detector_params=DETECTOR_PARAMS))
                 print(f"  reject  {leg['parent_ts']} -> {leg['term_ts']}")
                 i = (i + 1) % len(setups)
@@ -354,13 +397,14 @@ def main() -> None:
                     print(f"  save FAILED: {res}")
                     show("edit read-back failed; drag anchors onto candles")
                     continue
+                verdict = VERDICT_ADD if is_cand else VERDICT_ADJUST
                 append_label(
-                    make_label(leg, VERDICT_ADJUST, corrected=corrected, detector_params=DETECTOR_PARAMS)
+                    make_label(leg, verdict, corrected=corrected, detector_params=DETECTOR_PARAMS)
                 )
-                print(f"  adjust  -> {corrected['direction']} {corrected['parent_ts']} "
+                print(f"  {verdict}  -> {corrected['direction']} {corrected['parent_ts']} "
                       f"{corrected['parent_price']:.1f} -> {corrected['term_ts']} {corrected['term_price']:.1f}")
                 setups[i] = {**leg, **corrected}
-                show("saved: adjusted (snapped to candle extremes)")
+                show(f"saved: {verdict} (snapped to candle extremes)")
             time.sleep(0.2)
     except KeyboardInterrupt:
         print("\nStopped.")

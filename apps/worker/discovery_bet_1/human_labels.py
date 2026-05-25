@@ -27,7 +27,8 @@ LABELS_PATH = REPO_ROOT / "data" / "discovery_bet_1" / "human_labels.jsonl"
 VERDICT_ACCEPT = "accept"
 VERDICT_REJECT = "reject"
 VERDICT_ADJUST = "adjust"
-VERDICTS = (VERDICT_ACCEPT, VERDICT_REJECT, VERDICT_ADJUST)
+VERDICT_ADD = "add"  # a setup the detector MISSED (false negative) that should be found
+VERDICTS = (VERDICT_ACCEPT, VERDICT_REJECT, VERDICT_ADJUST, VERDICT_ADD)
 
 ANCHOR_FIELDS = (
     "direction",
@@ -149,7 +150,9 @@ def truth_setups(
     for label in latest_by_key(labels).values():
         if label.verdict == VERDICT_REJECT:
             continue
-        if label.verdict == VERDICT_ADJUST and label.corrected:
+        # accept -> stored anchors; adjust/add -> corrected anchors when present
+        # (an 'add' marks a missed setup; both accept and add are truth to reproduce).
+        if label.corrected:
             out.append(dict(label.corrected))
         else:
             out.append(
