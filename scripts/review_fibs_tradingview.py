@@ -337,8 +337,23 @@ def _info_html(i, n, leg, extra="", verdict=None):
                 f"real setup? Accept / Reject<br>")
     meta = ""
     if leg.get("span") is not None:
+        min_bars = DETECTOR_PARAMS["min_bars"]
+        min_atr = DETECTOR_PARAMS["atr_mult"]
+        span_ok = leg["span"] >= min_bars
+        depth_ok = leg["depth"] >= min_atr
         meta = (f"<br><b style='color:#cdd9e5'>{leg['span']} candles</b> &middot; "
                 f"<b style='color:#cdd9e5'>{leg['depth']:.1f} ATR</b> deep")
+        if span_ok and depth_ok:
+            meta += (f"<br><span style='color:#26a69a'>&#10003; clears gates "
+                     f"(&ge;{min_bars}c, &ge;{min_atr:.0f}&times; ATR)</span>")
+        else:
+            why = []
+            if not span_ok:
+                why.append(f"{leg['span']}c &lt; {min_bars}")
+            if not depth_ok:
+                why.append(f"{leg['depth']:.1f} &lt; {min_atr:.0f}&times; ATR")
+            meta += (f"<br><span style='color:#ef5350'>&#10007; below gate: "
+                     f"{' &amp; '.join(why)} &rarr; detector skipped it</span>")
     return (
         badge
         + head
@@ -484,15 +499,23 @@ def main() -> None:
                 setups[i] = {**leg, **corrected}
                 show(f"saved: {verdict} (snapped to candle extremes)")
             elif act == "report-missed":
-                # The human drew a Fib on a setup the detector missed; file it as add.
+                # The human drew a Fib on a setup the detector missed: snap it, add it
+                # to the list, and jump to it so its span/ATR vs the gates explain the miss.
                 corrected, res = _capture_adjustment(driver, candles, maps, READBACK_MANUAL_JS)
                 if corrected is None:
                     show("Draw the missed setup with the Fib tool, then click Report missed.")
                     continue
+                corrected["id"] = "reported"
+                corrected["reported"] = True
+                _annotate_span_depth(corrected, idx_map, atr)
                 append_label(make_label(corrected, VERDICT_ADD, detector_params=DETECTOR_PARAMS))
+                setups.append(corrected)
+                reviewed[len(setups) - 1] = VERDICT_ADD
+                i = len(setups) - 1
                 print(f"  add (missed)  {corrected['direction']} {corrected['parent_ts']} "
-                      f"{corrected['parent_price']:.1f} -> {corrected['term_ts']} {corrected['term_price']:.1f}")
-                show(f"saved: reported missed {corrected['direction']} setup")
+                      f"{corrected['parent_price']:.1f} -> {corrected['term_ts']} {corrected['term_price']:.1f} "
+                      f"({corrected.get('span','?')}c {corrected.get('depth',0):.1f}a)")
+                show("added your missed setup to the list")
             time.sleep(0.2)
     except KeyboardInterrupt:
         print("\nStopped.")
