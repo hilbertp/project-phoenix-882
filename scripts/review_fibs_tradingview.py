@@ -85,10 +85,20 @@ p.innerHTML =
   '<div>' + b('✓ exaaaactly (to the ms)','accept','#26a69a','APPROVE — setup is correct as drawn') + b('✗ wtf','reject','#ef5350','REJECT — not a real setup') + '</div>' +
   '<div>' + b('✎ Save edit','save','#f0b90b','Save your re-drawn anchors for THIS setup as a correction') + b('Done','done','#363a45','End the review session') + b('ⓘ Info','info','#1f6feb','Tip: hover any button to see what it does') + '</div>' +
   '<div>' + b('+ Report missed setup','report-missed','#8957e5','Draw a missed setup with the Fib tool, then click to add it') + '</div>' +
+  '<div style="font-size:10px;color:#6b7785;margin-top:5px">keys: W/↑ approve · S/↓ reject · A/← prev · D/→ next · Enter done</div>' +
   '<div id="db1rv-info" style="margin-top:7px;font-size:11px;color:#9aa4b2;line-height:1.4"></div>';
 document.body.appendChild(p);
 p.querySelectorAll('button').forEach(function(btn){ btn.onclick = function(){ window.__reviewSeq++; window.__reviewAction = {seq: window.__reviewSeq, action: btn.getAttribute('data-act')}; }; });
 window.__reviewStatus = function(title, info){ var t=document.getElementById('db1rv-title'); if(t) t.textContent=title; var i=document.getElementById('db1rv-info'); if(i && info!=null) i.innerHTML=info; };
+// Keyboard: W/Up=approve, S/Down=reject, A/Left=prev, D/Right=next, Enter=done.
+if (window.__reviewKeyHandler) { document.removeEventListener('keydown', window.__reviewKeyHandler, true); }
+window.__reviewKeyHandler = function(e){
+  if (e.target && (e.target.tagName==='INPUT' || e.target.tagName==='TEXTAREA' || e.target.isContentEditable)) return;
+  var m = {d:'next', arrowright:'next', a:'back', arrowleft:'back', w:'accept', arrowup:'accept', s:'reject', arrowdown:'reject', enter:'done'};
+  var act = m[(e.key||'').toLowerCase()];
+  if (act){ window.__reviewSeq=(window.__reviewSeq||0)+1; window.__reviewAction={seq:window.__reviewSeq, action:act}; e.preventDefault(); e.stopPropagation(); }
+};
+document.addEventListener('keydown', window.__reviewKeyHandler, true);
 return {ok:true};
 """
 
@@ -364,7 +374,9 @@ _OUTCOME_COLOR = {
 _HELP_HTML = (
     "<b style='color:#58a6ff'>Hover any button to see what it does.</b><br>"
     "e.g. <b>✓ exaaaactly</b> = approve &middot; <b>✗ wtf</b> = reject &middot; "
-    "<b>✎ Save edit</b> = save your re-drawn anchors."
+    "<b>✎ Save edit</b> = save your re-drawn anchors.<br><br>"
+    "<b style='color:#58a6ff'>Keyboard:</b> W/&uarr; approve &middot; S/&darr; reject "
+    "&middot; A/&larr; prev &middot; D/&rarr; next &middot; Enter = done"
 )
 
 
