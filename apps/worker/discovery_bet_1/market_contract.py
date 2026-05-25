@@ -17,7 +17,7 @@ LOCKED_MARKET_CONTRACT = MarketContract(
     human_label="BTCUSDT.P on Bitget",
     instrument_label="BTCUSDTPERP PERPETUAL MIX CONTRACT",
     timeframe="1H",
-    review_window="last 3 months",
+    review_window="last 12 months",
 )
 
 

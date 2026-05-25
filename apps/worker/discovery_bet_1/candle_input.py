@@ -10,7 +10,7 @@ from pathlib import Path
 from apps.worker.discovery_bet_1.types import Candle
 
 EXPECTED_COLUMNS = ["source_timestamp", "open", "high", "low", "close", "volume"]
-MAX_REVIEW_WINDOW = timedelta(days=93)
+MAX_REVIEW_WINDOW = timedelta(days=372)
 SOURCE_PROVENANCE_SUFFIX = ".provenance.json"
 
 
@@ -144,4 +144,4 @@ def _validate_candles(
         previous_timestamp = current_timestamp
 
     if parsed_timestamps[-1] - parsed_timestamps[0] > MAX_REVIEW_WINDOW:
-        raise SourceInputContractError("Manual CSV input must contain last-3-month data only.")
+        raise SourceInputContractError("Manual CSV input must contain last-12-month data only.")

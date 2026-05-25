@@ -17,7 +17,7 @@ from apps.worker.discovery_bet_1.market_contract import (
 from apps.worker.discovery_bet_1.pivots import detect_local_pivots
 from apps.worker.discovery_bet_1.types import GenerationOutputs
 
-DEFAULT_INPUT_PATH = Path("data/discovery_bet_1/bitget_btcusdt_p_1h_last_3_months.csv")
+DEFAULT_INPUT_PATH = Path("data/discovery_bet_1/bitget_btcusdt_p_1h_last_12_months.csv")
 DEFAULT_ARTIFACTS_DIR = Path("artifacts/discovery_bet_1")
 
 

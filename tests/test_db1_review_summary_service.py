@@ -18,7 +18,7 @@ class DB1ReviewSummaryServiceTests(unittest.TestCase):
 
             payload = service.get_summary_payload()
 
-        self.assertEqual(payload["market_contract"]["review_window"], "last 3 months")
+        self.assertEqual(payload["market_contract"]["review_window"], "last 12 months")
         self.assertEqual(payload["summary"]["total_reviewed_structures"], 3)
         self.assertEqual(payload["summary"]["good_enough_count"], 1)
         self.assertEqual(payload["summary"]["adjusted_accept_count"], 1)

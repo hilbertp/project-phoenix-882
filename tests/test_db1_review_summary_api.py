@@ -30,7 +30,7 @@ class DB1ReviewSummaryApiTests(unittest.TestCase):
 
         self.assertEqual(payload["summary"]["total_reviewed_structures"], 3)
         self.assertEqual(payload["summary"]["readiness_hint"], "continue")
-        self.assertEqual(payload["market_contract"]["review_window"], "last 3 months")
+        self.assertEqual(payload["market_contract"]["review_window"], "last 12 months")
         self.assertEqual(allow_origin, "*")
 
     def test_get_summary_endpoint_returns_zero_payload_without_submissions(self) -> None:

@@ -8,21 +8,23 @@ Discovery Bet 1 uses a manual CSV import for the exact locked market contract be
 - human label: `BTCUSDT.P on Bitget`
 - instrument label: `BTCUSDTPERP PERPETUAL MIX CONTRACT`
 - timeframe: `1H`
-- review window: `last 3 months`
+- review window: `last 12 months`
 
 ## Required Input File
 
 Place the manual export at:
 
 ```text
-data/discovery_bet_1/bitget_btcusdt_p_1h_last_3_months.csv
+data/discovery_bet_1/bitget_btcusdt_p_1h_last_12_months.csv
 ```
 
 Place the matching provenance sidecar at:
 
 ```text
-data/discovery_bet_1/bitget_btcusdt_p_1h_last_3_months.provenance.json
+data/discovery_bet_1/bitget_btcusdt_p_1h_last_12_months.provenance.json
 ```
+
+Regenerate both with `python scripts/acquire_db1_12mo_data.py` (tvDatafeed guest session).
 
 ## Required CSV Columns
 
@@ -35,7 +37,7 @@ source_timestamp,open,high,low,close,volume
 1. `source_timestamp` values must be preserved exactly as delivered by the TradingView-based source.
 2. Rows must be in ascending chronological order.
 3. Source timestamp irregularities such as DST gaps are preserved and must not be normalized away.
-4. The file must contain last-3-month data only.
+4. The file must contain last-12-month data only.
 5. The provenance sidecar must include acquisition timestamp, acquisition operator or process, acquisition method, and a matching SHA-256 hash of the CSV file.
 
 The generator does not infer market identity from filename alone.

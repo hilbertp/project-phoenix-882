@@ -16,3 +16,4 @@ __pycache__/
 !/artifacts/.gitkeep
 !/artifacts/discovery_bet_1/
 !/artifacts/discovery_bet_1/.gitkeep
+.chrome-tv-manual/

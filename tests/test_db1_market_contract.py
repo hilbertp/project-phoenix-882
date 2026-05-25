@@ -14,7 +14,7 @@ class DB1MarketContractTests(unittest.TestCase):
             "BTCUSDTPERP PERPETUAL MIX CONTRACT",
         )
         self.assertEqual(LOCKED_MARKET_CONTRACT.timeframe, "1H")
-        self.assertEqual(LOCKED_MARKET_CONTRACT.review_window, "last 3 months")
+        self.assertEqual(LOCKED_MARKET_CONTRACT.review_window, "last 12 months")
 
     def test_validate_market_contract_rejects_alternate_identity(self) -> None:
         with self.assertRaises(ValueError):
