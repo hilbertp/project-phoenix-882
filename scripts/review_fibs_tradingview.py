@@ -56,6 +56,7 @@ from apps.worker.discovery_bet_1.human_labels import (
 )
 from apps.worker.discovery_bet_1.pivots import detect_local_pivots
 from apps.worker.discovery_bet_1.run_generator import DEFAULT_INPUT_PATH
+from scripts.execute_fib_strategy import execute
 from scripts.place_fibs_tradingview import (
     LAYOUT_URL,
     MANUAL_SWINGS,
@@ -76,12 +77,12 @@ window.__reviewSeq = 0;
 window.__reviewAction = null;
 const p = document.createElement('div');
 p.id = 'db1-review-panel';
-p.style.cssText = 'position:fixed;top:90px;right:18px;z-index:2147483647;background:#1e222d;color:#fff;padding:10px;border-radius:8px;font:12px -apple-system,sans-serif;box-shadow:0 2px 14px rgba(0,0,0,.6);width:230px';
+p.style.cssText = 'position:fixed;top:90px;right:18px;z-index:2147483647;background:#1e222d;color:#fff;padding:10px;border-radius:8px;font:12px -apple-system,sans-serif;box-shadow:0 2px 14px rgba(0,0,0,.6);width:280px';
 function b(label, act, bg){ return '<button data-act="'+act+'" style="margin:2px;padding:6px 9px;border:0;border-radius:4px;cursor:pointer;background:'+bg+';color:#fff;font-size:12px">'+label+'</button>'; }
 p.innerHTML =
   '<div id="db1rv-title" style="font-weight:bold;margin-bottom:6px">DB1 Setup Review</div>' +
   '<div>' + b('◀ Back','back','#363a45') + b('Next ▶','next','#2962ff') + '</div>' +
-  '<div>' + b('✓ Accept','accept','#26a69a') + b('✗ Reject','reject','#ef5350') + '</div>' +
+  '<div>' + b('✓ exaaaactly (to the ms)','accept','#26a69a') + b('✗ wtf','reject','#ef5350') + '</div>' +
   '<div>' + b('✎ Save edit','save','#f0b90b') + b('Done','done','#363a45') + '</div>' +
   '<div>' + b('+ Report missed setup','report-missed','#8957e5') + '</div>' +
   '<div id="db1rv-info" style="margin-top:7px;font-size:11px;color:#9aa4b2;line-height:1.4"></div>';
@@ -265,6 +266,34 @@ def _annotate_span_depth(leg, idx_map, atr):
     return leg
 
 
+# Success measured off the Fib level reach: if 0.786 is never tagged it's a
+# miss/shrug (no trade); otherwise the furthest level reached sets win/loss.
+_OUTCOME_LABEL = {
+    "no_trigger": ("miss / shrug — 0.786 never tagged", "miss"),
+    "no_entry": ("miss / shrug — no entry", "miss"),
+    "wipeout": ("LOSS — stopped at 1.05", "loss"),
+    "tp1_then_scratch": ("scratch — TP1 then break-even", "scratch"),
+    "tp2_then_scratch": ("partial — TP2 then break-even", "partial"),
+    "tp3_full": ("WIN — full 0.0 target", "win"),
+    "open_no_tp": ("open — entered, no TP yet", "open"),
+    "open_tp1": ("open — past TP1", "open"),
+    "open_tp2": ("open — past TP2", "open"),
+}
+
+
+def _annotate_outcome(leg, candles, idx_map):
+    """Run the Fib trade plan and attach the success outcome + blended R."""
+    try:
+        res = execute(candles, idx_map, leg)
+    except Exception:
+        return leg
+    label, kind = _OUTCOME_LABEL.get(res["status"], (res["status"], "open"))
+    leg["outcome"] = label
+    leg["outcome_kind"] = kind
+    leg["outcome_r"] = res["r"]
+    return leg
+
+
 def _window_name(setups, j, role):
     leg = setups[j]
     pd = f"{leg['parent_ts'][8:10]}-{leg['parent_ts'][5:7]}"
@@ -323,6 +352,15 @@ _VERDICT_BADGE = {
     "add": ("&#43; ADDED (missing)", "#8957e5"),
 }
 
+_OUTCOME_COLOR = {
+    "win": "#26a69a",
+    "loss": "#ef5350",
+    "partial": "#3fb950",
+    "scratch": "#d29922",
+    "miss": "#6b7785",
+    "open": "#58a6ff",
+}
+
 
 def _info_html(i, n, leg, extra="", verdict=None):
     if verdict:
@@ -354,6 +392,11 @@ def _info_html(i, n, leg, extra="", verdict=None):
                 why.append(f"{leg['depth']:.1f} &lt; {min_atr:.0f}&times; ATR")
             meta += (f"<br><span style='color:#ef5350'>&#10007; below gate: "
                      f"{' &amp; '.join(why)} &rarr; detector skipped it</span>")
+    outcome = ""
+    if leg.get("outcome"):
+        ocol = _OUTCOME_COLOR.get(leg.get("outcome_kind"), "#9aa4b2")
+        outcome = (f"<br><b style='color:{ocol}'>{leg['outcome']}</b> "
+                   f"({leg.get('outcome_r', 0.0):+.2f}R)")
     return (
         badge
         + head
@@ -361,6 +404,7 @@ def _info_html(i, n, leg, extra="", verdict=None):
         f"{leg['parent_ts'][5:16]} &rarr; {leg['term_ts'][5:16]}<br>"
         f"{leg['parent_price']:.0f} &rarr; {leg['term_price']:.0f}"
         + meta
+        + outcome
         + f"{('<br>' + extra) if extra else ''}"
     )
 
@@ -415,6 +459,7 @@ def main() -> None:
     idx_map = {c.source_timestamp: k for k, c in enumerate(candles)}
     for s in setups:
         _annotate_span_depth(s, idx_map, atr)
+        _annotate_outcome(s, candles, idx_map)
     n_cand = sum(1 for s in setups if s.get("candidate"))
     if n_cand:
         print(f"Inserted {n_cand} candidate missing setups (same-direction gaps) to judge.")
