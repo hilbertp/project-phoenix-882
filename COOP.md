@@ -12,31 +12,32 @@ is both the **responsibilities charter** and the **live coordination log**.
 
 ## Agents & responsibilities
 
-### Claude — implementation & design (NO live browser)
-- **Owns:** Python implementation (detector `_clean_legs`, label store, Pine
-  generator, analysis CLIs, the review-controller *code*), pure-Python unit
-  tests, architecture, docs, and this file.
-- **Does NOT:** drive the live Chrome/TradingView, run Selenium/browser
-  integration tests, or do human-eyes setup review. (Learned the hard way —
-  Claude driving the live browser crashed the debug session; see Log.)
-- Hands off anything needing the live browser or human judgement to Codex/Dev
-  here, with exact repro steps and what to report back.
+### Claude — LEAD DEV (implementation, architecture; coordinates Cursor)
+- **Owns:** implementation + architecture of the whole pipeline (detector, label
+  store, Pine generator, analysis CLIs, review-controller code, demo data),
+  pure-Python unit tests, docs, this file, and branch/integration decisions.
+  Sets technical direction and breaks work down for Cursor.
+- **Does NOT** drive the live Chrome/TradingView or run Selenium/browser tests —
+  that's Codex. (Claude driving the live browser once crashed the debug session;
+  see Log.) Hands such work to Codex with exact repro steps.
 
-### Codex — live & integration testing, browser automation
-- **Owns:** running the Selenium tools against the real logged-in TradingView;
-  verifying panel injection, anchor read-back, Next/Back/Accept/Reject/Save;
-  managing/recovering the Chrome debug session; integration testing.
-- **Reports** results here as RESULT/BLOCKER entries with enough detail for
-  Claude to fix the code (raw JS output, stack traces, the resulting
-  `human_labels.jsonl`).
-- **Does NOT** redesign architecture or rewrite Claude's modules without a
-  DECISION entry agreed here.
+### Codex — TEST (live & integration testing)
+- **Owns:** running the tools against real TradingView (Selenium), e2e /
+  user-journey tests, browser-session management, integration verification.
+- **Reports** RESULT/BLOCKER entries with enough detail for Claude to fix, and
+  **commits & pushes** its tests to the canonical branch so they integrate.
+- **Does NOT** redesign architecture; routes bugs to Claude.
+
+### Cursor — HELPER to Claude (dev assist, under Claude's direction)
+- **Owns:** the dev sub-tasks Claude assigns here — UI wiring, secondary
+  implementation, refactors, docs — to Claude's spec / data contracts. Flags
+  questions as QUESTION entries.
+- **Does NOT** change architecture or core modules without a Claude DECISION
+  entry, and does not fork the coordination files (one `AGENTS.md`, one `COOP.md`).
 
 ### Dev (Philipp) — product owner & human reviewer
-- **Owns:** human-eyes review of fib setups (the ground truth), final
-  acceptance, product/strategy decisions, anything needing TradingView
-  login/credentials, and pushes to shared branches.
-- Decides priorities and resolves disagreements.
+- **Owns:** human-eyes review of fib setups (ground truth), final acceptance,
+  product/strategy decisions, credentials, priorities.
 
 ---
 
@@ -52,14 +53,24 @@ is both the **responsibilities charter** and the **live coordination log**.
 ---
 
 ## Open handoffs
-- [ ] **(→ Dev)** Recover the debug session: reopen the TradingView chart tab —
-  Claude's smoke test left port 9222 with no page targets.
-- [ ] **(→ Codex)** Live-test `scripts/review_fibs_tradingview.py` — see
-  REQUEST 2026-05-25 below. Riskiest unknown: does `READBACK_FIB_JS` return the
-  Fib anchor points in this TradingView build?
-- [ ] **(→ Claude)** Harden `_make_driver` so a failed attach does **not** fall
-  back to launching a second Chrome on the in-use profile (it collides and
-  crashes). Make it fail loudly instead. Needs Codex live-validation after.
+- [ ] **(→ Cursor/Codex)** Commit & push your e2e Selenium tests
+  (`tests/test_db1_user_journey_e2e.py`) and `requirements-dev.txt` ONTO
+  `db1-s2-candidate-leg-scoring` (the canonical branch). They are uncommitted in
+  the Cursor window, so the merge could not pull them in. When committing your
+  `AGENTS.md` run-commands, fold them into the existing `AGENTS.md` — do not
+  overwrite the COOP pointer or create a second one.
+- [ ] **(→ Dev)** DEMO (fib trade-plan): from `db1-s2-candidate-leg-scoring`, run
+  `python scripts/export_db1_fib_review_pine.py` and paste
+  `artifacts/discovery_bet_1/db1_auto_fib_review.pine` into TradingView
+  (BITGET:BTCUSDT.P, 1H, UTC). Use the **Focus** input to step setups; toggle the
+  trade plan + reach tracker. (Self-contained `demo_data.json` also available via
+  `scripts/export_demo_data.py` for a future web demo.)
+- [ ] **(→ Claude)** Harden `_make_driver`: a failed attach must fail loudly, not
+  launch a colliding second Chrome on the in-use profile. Lower priority (the demo
+  path needs no Selenium). Needs Codex live-validation after.
+- [x] **(→ Claude)** Roles updated (Claude=lead dev, Codex=test, Cursor=helper).
+- [x] **(→ Claude)** Picked canonical branch (`db1-s2-candidate-leg-scoring`) and
+  merged the Codex branch's committed infra (license + contributor workflow).
 
 ---
 
@@ -113,3 +124,32 @@ the in-use `--user-data-dir=.chrome-tv-manual` profile; it crashed and left debu
 port 9222 with **no page targets**. Dev: reopen the TradingView chart tab to
 restore the session. Claude will not drive the live browser again — see the
 `_make_driver` hardening handoff above.
+
+### [2026-05-25] Dev — DECISION
+Roles set: Claude = lead dev (+ coordinates Cursor), Codex = test, Cursor =
+helper to Claude, Dev = PO. Priority: the fib trade-plan demo, asap. Claude picks
+the integration branch and merges.
+
+### [2026-05-25] Claude — DECISION + STATUS
+- Canonical branch = `db1-s2-candidate-leg-scoring` (it has the fib demo + COOP).
+- Merged `origin/codex/add-apache-license` into it — committed content was infra
+  only (LICENSE, CONTRIBUTING.md, `.github/pull_request_template.md`,
+  `docs/github_workflow.md`, README +7). Clean merge, 26 DB1 tests still green.
+- **Codex's e2e tests + `requirements-dev.txt` were NOT pulled in — they're
+  uncommitted in the Cursor window.** Handoff above to commit & push them here.
+- Discovered an existing API-backed review UI in `apps/ui` (review-surface,
+  chart-truth, db1-s2-candidate-legs) — that is what Codex e2e-tested. It is the
+  *leg-scoring* surface, separate from the fib trade-plan demo.
+- Demo (fib): `scripts/export_db1_fib_review_pine.py` -> paste the `.pine` into
+  TradingView. Also added `scripts/export_demo_data.py` -> `demo_data.json`
+  (candles + setups + reach sequence + execution) as the data contract for a
+  future self-contained web demo, if we want one instead of the TradingView paste.
+
+### [2026-05-25] Claude — REQUEST (→ Cursor)
+You are the dev helper. Next task, on the canonical branch: turn
+`artifacts/discovery_bet_1/demo_data.json` (produced by `scripts/export_demo_data.py`)
+into a single self-contained `artifacts/discovery_bet_1/demo.html` — a candlestick
+chart with **Back/Next** through `setups`, the focused setup's Fib levels + trade
+plan drawn, and its `reaches` sequence + `execution` outcome shown. CDN charting
+lib is fine; one file, no build step. This gives a browser demo with real Back/Next
+that needs no TradingView. Report DONE here with the path.

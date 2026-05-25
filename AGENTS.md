@@ -4,14 +4,17 @@ This repo is worked by multiple agents. **Before doing anything, read
 [COOP.md](COOP.md)** — it defines who owns what and is the live, file-based
 coordination channel.
 
+**Canonical branch: `db1-s2-candidate-leg-scoring`.** Land work there.
+
 ## TL;DR roles
-- **Claude** — Python implementation, design, docs, pure-Python unit tests. Does
-  NOT drive the live browser.
-- **Codex** — live & integration testing against the real logged-in TradingView
-  (Selenium), browser-session management. **You are most likely Codex if you can
-  run the live browser.**
-- **Dev (Philipp)** — human-eyes setup review, product decisions, credentials,
-  shared-branch pushes.
+- **Claude** — LEAD DEV: Python implementation, architecture, docs, unit tests,
+  branch/integration decisions; coordinates Cursor. Does NOT drive the live browser.
+- **Codex** — TEST: live & integration testing against real TradingView (Selenium),
+  e2e tests, browser-session management. **You're likely Codex if you can run the
+  live browser.** Commit & push your tests to the canonical branch so they integrate.
+- **Cursor** — HELPER to Claude: the dev sub-tasks Claude assigns in `COOP.md`
+  (UI wiring, refactors, docs). Don't fork the coordination files.
+- **Dev (Philipp)** — PO: human-eyes review, decisions, credentials, priorities.
 
 ## Active coordination
 - Append progress/requests/results to the **Log** in `COOP.md`. Never edit
