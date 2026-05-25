@@ -59,12 +59,15 @@ is both the **responsibilities charter** and the **live coordination log**.
   the Cursor window, so the merge could not pull them in. When committing your
   `AGENTS.md` run-commands, fold them into the existing `AGENTS.md` — do not
   overwrite the COOP pointer or create a second one.
-- [ ] **(→ Dev)** DEMO (fib trade-plan): from `db1-s2-candidate-leg-scoring`, run
-  `python scripts/export_db1_fib_review_pine.py` and paste
-  `artifacts/discovery_bet_1/db1_auto_fib_review.pine` into TradingView
-  (BITGET:BTCUSDT.P, 1H, UTC). Use the **Focus** input to step setups; toggle the
-  trade plan + reach tracker. (Self-contained `demo_data.json` also available via
-  `scripts/export_demo_data.py` for a future web demo.)
+- [ ] **(→ Dev/Codex)** DEMO = the **TradingView review controller** (PO decided:
+  rating must happen on the real chart with the Object Tree, prev/next visible).
+  Prereq: debug Chrome logged into TradingView. Flow:
+  `python scripts/place_fibs_tradingview.py login` (log in), then
+  `python scripts/review_fibs_tradingview.py` — an in-chart panel steps setups,
+  placing **prev / current / next** as named Object-Tree objects (current =
+  "<< REVIEWING >>"); Accept/Reject/Save-edit feed the label store + recalibrate.
+  (The standalone HTML demo `scripts/serve_review_demo.py` works but is NOT the
+  rating surface — kept as a no-login fallback.)
 - [ ] **(→ Claude)** Harden `_make_driver`: a failed attach must fail loudly, not
   launch a colliding second Chrome on the in-use profile. Lower priority (the demo
   path needs no Selenium). Needs Codex live-validation after.

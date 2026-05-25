@@ -90,8 +90,16 @@ const bars = model.mainSeries().data();
 const epochByIndex = {};
 bars.each((index, value) => { epochByIndex[index] = value[0]; });
 const lts = chartModel.allLineTools();
-let fib = null;
-for (let i=lts.length-1;i>=0;i--){ const s=lts[i]&&lts[i].state&&lts[i].state(); if(s&&s.type==='LineToolFibRetracement'){ fib=lts[i]; break; } }
+let fib = null, fallback = null;
+for (let i=lts.length-1;i>=0;i--){
+    const t=lts[i]; const s=t&&t.state&&t.state();
+    if(!(s&&s.type==='LineToolFibRetracement')) continue;
+    if(!fallback) fallback = t;
+    let txt='';
+    try { const ch=t.properties().childs(); txt=(ch.editableText&&ch.editableText.value&&ch.editableText.value())||(ch.title&&ch.title.value&&ch.title.value())||''; } catch(e){}
+    if (String(txt).indexOf('REVIEWING') >= 0) { fib = t; break; }
+}
+if(!fib) fib = fallback;
 if(!fib){ return {ok:false, error:'no fib on chart'}; }
 let pts = null;
 try { pts = fib.points(); } catch(e) {}
@@ -134,19 +142,37 @@ def _epoch_to_candle(epoch, maps):
     return best[1] if best else None
 
 
-def _place_focused(driver, leg, label, ctx):
-    driver.execute_script(CLEAR_JS)
-    req = _request_for({**leg, "name": label})
+def _place_one(driver, leg, name, ctx):
+    req = _request_for({**leg, "name": name})
     for tz in (ctx.effective_chart_timezone, "UTC"):
         pts = _build_expected_line_tool_points(req, chart_time_zone=tz)
         mapped = {
             "parentPoint": {"price": pts[0]["price"], "time_t": pts[0]["time_t"]},
             "terminalPoint": {"price": pts[1]["price"], "time_t": pts[1]["time_t"]},
         }
-        result = driver.execute_script(PLACE_FIB_JS, mapped, "60", label, True)
+        result = driver.execute_script(PLACE_FIB_JS, mapped, "60", name, True)
         if isinstance(result, dict) and result.get("ok"):
             return True
     return False
+
+
+def _window_name(setups, j, role):
+    leg = setups[j]
+    pd = f"{leg['parent_ts'][8:10]}-{leg['parent_ts'][5:7]}"
+    td = f"{leg['term_ts'][8:10]}-{leg['term_ts'][5:7]}"
+    return f"auto{j + 1} {role} {leg['direction']} {pd}->{td}"
+
+
+def _place_window(driver, setups, i, ctx):
+    """Show the previous, current, and next setup as named Object-Tree entries so
+    the reviewer can see context and navigate. Current is marked REVIEWING."""
+    driver.execute_script(CLEAR_JS)
+    if i - 1 >= 0:
+        _place_one(driver, setups[i - 1], _window_name(setups, i - 1, "(prev)"), ctx)
+    if i + 1 < len(setups):
+        _place_one(driver, setups[i + 1], _window_name(setups, i + 1, "(next)"), ctx)
+    # Place current LAST so it sits on top and is the read-back target.
+    return _place_one(driver, setups[i], _window_name(setups, i, "<< REVIEWING >>"), ctx)
 
 
 def _capture_adjustment(driver, candles, maps):
@@ -227,7 +253,7 @@ def main() -> None:
 
     def show(extra=""):
         leg = setups[i]
-        _place_focused(driver, leg, f"review {i + 1}/{len(setups)}", ctx)
+        _place_window(driver, setups, i, ctx)
         driver.execute_script(
             "window.__reviewStatus(arguments[0], arguments[1]);",
             f"DB1 Review  {i + 1}/{len(setups)}",

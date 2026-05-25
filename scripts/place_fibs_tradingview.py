@@ -256,13 +256,20 @@ def _request_for(leg) -> TradingViewSyncRequest:
     )
 
 
-def _make_driver() -> tuple[object, bool]:
+def _make_driver(launch_if_missing: bool = False) -> tuple[object, bool]:
     attach = Options()
     attach.add_experimental_option("debuggerAddress", f"127.0.0.1:{DEBUG_PORT}")
     try:
         return webdriver.Chrome(options=attach), True
     except WebDriverException:
-        pass
+        if not launch_if_missing:
+            raise SystemExit(
+                f"No debug Chrome on 127.0.0.1:{DEBUG_PORT}. Launch it and log into "
+                f"TradingView first:\n"
+                f"  .venv/bin/python scripts/place_fibs_tradingview.py login\n"
+                f"then re-run. (Refusing to launch a second Chrome on the in-use "
+                f"profile -- that collides with the running browser and crashes.)"
+            ) from None
     opts = Options()
     opts.binary_location = CHROME_BINARY
     opts.add_argument(f"--user-data-dir={PROFILE_DIR}")
@@ -293,7 +300,7 @@ def main() -> None:
                   f"{leg['term_ts']} {leg['term_price']}  (span {leg['term_idx']-leg['parent_idx']}, size {leg['size']:.1f})")
         return
 
-    driver, attached = _make_driver()
+    driver, attached = _make_driver(launch_if_missing=(mode == "login"))
     if not attached or "tradingview.com/chart" not in driver.current_url:
         driver.get(CHART_URL)
         time.sleep(10)
