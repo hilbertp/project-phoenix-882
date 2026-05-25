@@ -78,11 +78,11 @@ window.__reviewAction = null;
 const p = document.createElement('div');
 p.id = 'db1-review-panel';
 p.style.cssText = 'position:fixed;top:90px;right:18px;z-index:2147483647;background:#1e222d;color:#fff;padding:10px;border-radius:8px;font:12px -apple-system,sans-serif;box-shadow:0 2px 14px rgba(0,0,0,.6);width:280px';
-function b(label, act, bg){ return '<button data-act="'+act+'" style="margin:2px;padding:6px 9px;border:0;border-radius:4px;cursor:pointer;background:'+bg+';color:#fff;font-size:12px">'+label+'</button>'; }
+function b(label, act, bg, title){ return '<button data-act="'+act+'" title="'+(title||'')+'" style="margin:2px;padding:6px 9px;border:0;border-radius:4px;cursor:pointer;background:'+bg+';color:#fff;font-size:12px">'+label+'</button>'; }
 p.innerHTML =
   '<div id="db1rv-title" style="font-weight:bold;margin-bottom:6px">DB1 Setup Review</div>' +
   '<div>' + b('◀ Back','back','#363a45') + b('Next ▶','next','#2962ff') + '</div>' +
-  '<div>' + b('✓ exaaaactly (to the ms)','accept','#26a69a') + b('✗ wtf','reject','#ef5350') + '</div>' +
+  '<div>' + b('✓ exaaaactly (to the ms)','accept','#26a69a','APPROVE — setup is correct as drawn') + b('✗ wtf','reject','#ef5350','REJECT — not a real setup') + '</div>' +
   '<div>' + b('✎ Save edit','save','#f0b90b') + b('Done','done','#363a45') + b('ⓘ Info','info','#1f6feb') + '</div>' +
   '<div>' + b('+ Report missed setup','report-missed','#8957e5') + '</div>' +
   '<div id="db1rv-info" style="margin-top:7px;font-size:11px;color:#9aa4b2;line-height:1.4"></div>';
@@ -362,6 +362,10 @@ _OUTCOME_COLOR = {
 }
 
 _HELP_HTML = (
+    "<b style='color:#58a6ff'>Buttons</b><br>"
+    "<b>✓ exaaaactly (to the ms)</b> = <b style='color:#26a69a'>APPROVE</b> "
+    "(setup correct as drawn)<br>"
+    "<b>✗ wtf</b> = <b style='color:#ef5350'>REJECT</b> (not a real setup)<br><br>"
     "<b style='color:#58a6ff'>How your edits are saved</b><br>"
     "&bull; <b>Fix a setup:</b> drag the current Fib's anchors to the right "
     "pivots, then <b>Save edit</b>.<br>"
