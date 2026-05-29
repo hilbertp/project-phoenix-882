@@ -163,26 +163,41 @@ The script auto-detects Chrome via `_find_chrome_binary()`. Override with
 
 #### Run the workflow (canonical console commands — macOS and WSL identical)
 
-The dashboard's "Manual review in TradingView" button works, but spawning
-subprocesses from the HTTP server occasionally races. The console wrappers
-are the reliable path:
+Three short scripts, run in this order. They're thin wrappers around the
+underlying Python (PYTHONPATH set, no `.venv/bin/python` typing) — short
+memorable names, copy-pasteable from anywhere.
 
 ```bash
-# Step 1 (one-time per session): spawn debug Chrome with the project-local
-# profile and open the TradingView chart. Log in there. Leave Chrome running.
+# 1. open debug Chrome with the project-local profile + TradingView chart.
+#    Log into TV manually (Email login). Leave Chrome running.
 ./scripts/tv-login.sh
 
-# Step 2 (every time you want fresh setups): place N setups on the chart.
+# 2. place N setups on the live chart as native Fib Retracement objects.
 ./scripts/tv-place.sh           # default 12
 ./scripts/tv-place.sh 24        # 24 setups
 ./scripts/tv-place.sh dry       # print legs only, no browser action
+
+# 3. WSAD review session: injects a floating panel onto the TV chart and
+#    walks through each placed setup. Verdicts append to human_labels.jsonl.
+./scripts/tv-review.sh          # review recent-3M setups
+./scripts/tv-review.sh manual   # review the 8 hand-picked reference setups
 ```
 
-That's it. Both scripts are thin wrappers around `place_fibs_tradingview.py`
-(same Python under the hood) but with PYTHONPATH set, no manual `.venv/bin/python`
-typing, and short memorable names. The dashboard at http://127.0.0.1:8800
-shows the same console snippet inside its TV-review modal — copy-paste from
-either location.
+The WSAD overlay appears on the TradingView chart (NOT in the dashboard):
+
+```
+W / ↑      approve  (✓ exaaactly to the ms)
+S / ↓      reject   (✗ wtf - not a real setup)
+A / ←      back     (previous setup)
+D / →      next     (next setup)
+Enter      done     (end the review session)
+```
+
+When you press W or S, the current setup gets a verdict in
+`data/discovery_bet_1/human_labels.jsonl`. The detector picks those up
+on the next backtest run, so labels you give today shape tomorrow's
+scoring. Dragging the Fib's anchors in TradingView + clicking "Save edit"
+captures corrected anchors and writes them as a VERDICT_ADJUST entry.
 
 The login session persists in `.chrome-tv-manual/` (project-local, gitignored)
 — each contributor has their own. **Don't copy it between machines.**

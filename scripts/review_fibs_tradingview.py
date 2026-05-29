@@ -160,6 +160,56 @@ return {ok:true, points: pts.slice(0,2).map(pt=>({epoch: epochOf(pt), price: pt.
 
 CLEAR_JS = "const c=window._exposed_chartWidgetCollection; if(c){c._activeChartWidgetModel.value().removeAllDrawingTools();}"
 
+# After placing a Fib, pan the chart's visible time range to a window that
+# includes the parent and a bit past the terminal, so the user doesn't have
+# to scroll to find the current setup. Both timestamps are epoch seconds.
+NAVIGATE_TO_FIB_JS = r"""
+const parentEpoch = arguments[0];
+const termEpoch = arguments[1];
+const c = window._exposed_chartWidgetCollection;
+if (!c) return {ok:false, error:'no collection'};
+const widget = c._activeChartWidgetModel.value();
+const chartModel = widget.model();
+const series = widget.mainSeries();
+const bars = series.data();
+// Find candle indices for the two timestamps
+let parentIdx = null, termIdx = null;
+bars.each((index, value) => {
+    const ts = value[0];
+    if (ts === parentEpoch) parentIdx = index;
+    if (ts === termEpoch) termIdx = index;
+});
+if (parentIdx === null || termIdx === null) {
+    return {ok:false, error:'timestamps not in loaded range',
+            parentEpoch, termEpoch, parentIdx, termIdx,
+            firstBar: bars.first(), lastBar: bars.last()};
+}
+// Pad: 25% of the leg span on each side, min 20 bars
+const span = Math.abs(termIdx - parentIdx);
+const pad = Math.max(20, Math.round(span * 0.5));
+const lo = Math.min(parentIdx, termIdx) - pad;
+const hi = Math.max(parentIdx, termIdx) + pad;
+// Set the visible time range. TradingView's timeScale supports
+// setVisibleLogicalRange which takes bar-index coords (logical = bar index).
+try {
+    const ts = chartModel.timeScale();
+    if (ts.setLogicalRange) {
+        ts.setLogicalRange({from: lo, to: hi});
+        return {ok:true, parentIdx, termIdx, lo, hi};
+    }
+    // Fallback: older TV builds expose setVisibleRange with epoch seconds
+    if (ts.setVisibleRange) {
+        const padSecs = Math.max(3600, Math.abs(termEpoch - parentEpoch) * 0.5);
+        ts.setVisibleRange({from: Math.min(parentEpoch, termEpoch) - padSecs,
+                            to:   Math.max(parentEpoch, termEpoch) + padSecs});
+        return {ok:true, fallback:'setVisibleRange'};
+    }
+} catch (e) {
+    return {ok:false, error: String(e)};
+}
+return {ok:false, error:'no setLogicalRange or setVisibleRange on timeScale'};
+"""
+
 # A custom Fib template applies after creation and blanks the text we set, so the
 # Object-Tree name (which reads editableText) is lost. Re-apply name = title once
 # the template has settled.
@@ -315,11 +365,27 @@ def _window_name(setups, j, role):
 
 def _place_current(driver, setups, i, ctx):
     """Show ONE Fib at a time -- only the current setup. Overlapping prev/next
-    Fibs made visual review confusing; Back/Next swaps the single chart instead."""
+    Fibs made visual review confusing; Back/Next swaps the single chart instead.
+    After placement, pan the chart so the current fib is in view -- otherwise the
+    user has to scroll manually to find each setup."""
     driver.execute_script(CLEAR_JS)
     placed = _place_one(driver, setups[i], _window_name(setups, i, "<< REVIEWING >>"), ctx)
     time.sleep(0.3)  # let the custom Fib template settle, then re-apply the name
     driver.execute_script(REAPPLY_NAMES_JS)
+    # Auto-navigate the chart to the current fib's time range. Best-effort:
+    # if TV's internal API has changed we surface a warning but don't crash.
+    leg = setups[i]
+    try:
+        parent_ts = leg["parent_ts"]; term_ts = leg["term_ts"]
+        parent_epoch = int(datetime.fromisoformat(parent_ts).replace(
+            tzinfo=ZoneInfo("UTC")).timestamp())
+        term_epoch = int(datetime.fromisoformat(term_ts).replace(
+            tzinfo=ZoneInfo("UTC")).timestamp())
+        nav = driver.execute_script(NAVIGATE_TO_FIB_JS, parent_epoch, term_epoch)
+        if not (isinstance(nav, dict) and nav.get("ok")):
+            print(f"  navigate-to-fib warning: {nav}", file=sys.stderr)
+    except Exception as exc:
+        print(f"  navigate-to-fib error: {exc!r}", file=sys.stderr)
     return placed
 
 
