@@ -37,33 +37,51 @@ the other assets are scored on raw detector output.
 
 ## Quickstart
 
-Prerequisites: **Python 3.12**, **git**. (A free TradingView account is only
-needed for the optional Selenium chart-placement tools.)
+Prerequisites: **Python 3.12+**, **git**. (Optional: Google Chrome, only
+needed for the "Manual review in TradingView" dashboard button — see the
+section below if you want it.)
+
+**Two commands from a fresh clone to a running dashboard** — same on macOS,
+WSL2 Ubuntu, and bare Linux:
 
 ```bash
-git clone https://github.com/hilbertp/project-phoenix-882.git
-cd project-phoenix-882
+git clone https://github.com/hilbertp/project-phoenix-882.git && cd project-phoenix-882
+./scripts/setup_phoenix.sh && ./scripts/start_phoenix.sh
+```
+
+`setup_phoenix.sh` is idempotent — re-running it is safe. It:
+- Verifies Python 3.12+.
+- Creates `.venv` if missing; upgrades pip; installs runtime + dev deps.
+- Detects Chrome (just notes if missing — not fatal for the backtest views).
+- Downloads BTC 1H 12-month data so the dashboard isn't empty on first launch.
+
+`start_phoenix.sh` brings up the dashboard at `http://127.0.0.1:8800` and
+opens your browser. The dashboard surfaces every backtest we've shipped
+(per-asset, per-regime KPIs, candlestick + fib level overlays, per-setup
+feedback). Highlights:
+
+- **WASD / arrow-key navigation** across the setup table:
+  `W`/`↑` approve · `S`/`↓` reject · `A`/`←` previous · `D`/`→` next · `Enter` done.
+  Visible hint in the filter row.
+- **"Manual review in TradingView"** button (top-right) opens a modal that
+  spawns Chrome with a dedicated debug profile, waits for you to log into
+  TradingView, then draws the most recent setups onto a live BITGET BTCUSDT.P
+  1H chart as native Fib retracement objects. You review on TV; you give
+  feedback back in the dashboard.
+
+If you want to skip the setup script and run things by hand, the long form is:
+
+```bash
 python3.12 -m venv .venv
 .venv/bin/pip install --upgrade pip
-.venv/bin/pip install tvDatafeed pandas numpy matplotlib selenium   # runtime
-.venv/bin/pip install pytest ruff                                    # dev
+.venv/bin/pip install pandas numpy matplotlib selenium pytest ruff
+.venv/bin/pip install "git+https://github.com/rongardF/tvdatafeed.git"
+.venv/bin/python scripts/acquire_db1_12mo_data.py   # BTC 1H, 12 months
+./scripts/start_phoenix.sh
 ```
 
-**Get data and open the dashboard** (the fastest way to see the project):
-
-```bash
-.venv/bin/python scripts/acquire_db1_12mo_data.py        # BTC 1H, 12 months
-./scripts/start_phoenix.sh                               # http://127.0.0.1:8800
-```
-
-`scripts/start_phoenix.sh` is the canonical launcher — it activates the venv,
-sets `PYTHONPATH`, brings up the dashboard, and opens your browser. The
-dashboard surfaces every backtest we've shipped (per-asset, per-regime KPIs,
-candlestick + fib level overlays, per-setup feedback) and includes a
-**"Manual review in TradingView"** button in the top-right that spawns the
-selenium-controlled Chrome session and places live Fib retracement objects
-on the BTC chart for the most recent setups — so you can review on
-TradingView while leaving the dashboard open for feedback.
+(`tvDatafeed` is hosted on GitHub, not PyPI — that's a recent upstream change,
+nothing to do with this project.)
 
 The dashboard opens on BTC (human-reviewed setups). Use the **Asset** dropdown to
 flick to other coins; for those, acquire data first, e.g.:

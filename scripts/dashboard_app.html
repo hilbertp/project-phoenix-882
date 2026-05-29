@@ -78,6 +78,10 @@ canvas { display: block; width: 100%; border-radius: 8px; }
 .btn.no { border-color: #7a2f31; color: #ff9a9c; } .btn.no:hover { background: #241516; }
 .btn.adj { border-color: #7a6a1f; color: #f0d36a; } .btn.adj:hover { background: #221f12; }
 .btn.on { background: #2962ff; color: #fff; border-color: #2962ff; }
+.kbd-hint { color: #6b7785; font-size: 11px; }
+kbd { display: inline-block; padding: 1px 5px; margin: 0 1px; border-radius: 3px;
+  background: #1c2230; color: #d1d4dc; border: 1px solid #2a3142;
+  font-family: ui-monospace, monospace; font-size: 10px; line-height: 1; }
 /* TV launcher modal */
 .tv-overlay { position: fixed; inset: 0; background: rgba(8,10,14,0.72); display: none;
   align-items: center; justify-content: center; z-index: 100; }
@@ -136,6 +140,14 @@ textarea { width: 100%; background: #1c2230; color: #d1d4dc; border: 1px solid #
     <label>direction <select id="f-dir"><option value="">all</option><option value="up">long</option><option value="down">short</option></select></label>
     <label>verdict <select id="f-verdict"><option value="">all</option><option value="accept">accept</option><option value="adjust">adjust</option><option value="add">add</option><option value="reject">reject/wtf</option></select></label>
     <span class="muted" id="count"></span>
+    <span style="flex:1"></span>
+    <span class="kbd-hint">
+      <kbd>W</kbd>/<kbd>↑</kbd> approve &middot;
+      <kbd>S</kbd>/<kbd>↓</kbd> reject &middot;
+      <kbd>A</kbd>/<kbd>←</kbd> prev &middot;
+      <kbd>D</kbd>/<kbd>→</kbd> next &middot;
+      <kbd>Enter</kbd> done
+    </span>
   </div>
   <div class="split">
     <div class="tbl-wrap"><table id="tbl"><thead></thead><tbody></tbody></table></div>
@@ -487,6 +499,63 @@ async function submit(verdict, corrected){
   } else flash("error: "+(res.error||"failed"));
 }
 function flash(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),2200); }
+
+// Keyboard navigation (matches the WASD scheme from review_fibs_tradingview.py):
+//   W / Up   = approve   (✓ exaaactly to the ms)
+//   S / Down = reject    (✗ wtf)
+//   A / Left = previous setup row (respects current filters + sort)
+//   D / Right = next setup row
+//   Enter    = close detail panel ("done")
+// Ignored when focus is in a text input / textarea / select.
+function tableVisibleKeys(){
+  return Array.from(document.querySelectorAll("#tbl tbody tr"))
+    .map(tr => tr.dataset.key)
+    .filter(Boolean);
+}
+function moveSel(delta){
+  if(!state) return;
+  const keys = tableVisibleKeys();
+  if(!keys.length) return;
+  let idx = sel ? keys.indexOf(sel) : -1;
+  if(idx === -1){ idx = delta > 0 ? -1 : keys.length; }
+  idx = Math.max(0, Math.min(keys.length - 1, idx + delta));
+  sel = keys[idx];
+  adjustMode = false; picks = [];
+  renderTable(); renderDetail();
+  const row = document.querySelector(`#tbl tbody tr[data-key="${sel}"]`);
+  if(row) row.scrollIntoView({block:"nearest"});
+}
+function quickVerdict(verdict){
+  if(!state || state.source !== "reviewed") return;
+  const s = sel ? setupByKey(sel) : null;
+  if(!s){ flash("select a setup first"); return; }
+  submit(verdict);
+}
+document.addEventListener("keydown", (e) => {
+  // Ignore when typing in an input/textarea/select or contenteditable
+  const t = e.target;
+  if(!t) return;
+  const tag = (t.tagName || "").toUpperCase();
+  if(tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t.isContentEditable) return;
+  if(e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = (e.key || "").toLowerCase();
+  const map = {
+    "w": "accept", "arrowup": "accept",
+    "s": "reject", "arrowdown": "reject",
+    "a": "prev",   "arrowleft": "prev",
+    "d": "next",   "arrowright": "next",
+    "enter": "done",
+  };
+  const act = map[k];
+  if(!act) return;
+  e.preventDefault(); e.stopPropagation();
+  if(act === "prev") moveSel(-1);
+  else if(act === "next") moveSel(+1);
+  else if(act === "accept") quickVerdict("accept");
+  else if(act === "reject") quickVerdict("reject");
+  else if(act === "done"){ sel = null; renderTable(); renderDetail(); }
+}, true);
+
 addEventListener("resize",()=>{ if(state){ renderEquity(); if(sel){ const s=setupByKey(sel); if(s) drawChart(s,s.by_regime[reg]); } } });
 
 // ---------- TradingView review launcher ----------
