@@ -308,7 +308,30 @@ def main() -> None:
                   f"{leg['term_ts']} {leg['term_price']}  (span {leg['term_idx']-leg['parent_idx']}, size {leg['size']:.1f})")
         return
 
-    driver, attached = _make_driver(launch_if_missing=(mode == "login"))
+    # `login` mode bypasses selenium entirely: selenium-managed chromedriver
+    # ignores our --remote-debugging-port=9222 flag and binds its own random
+    # port, so the placement step can never attach. Spawn Chrome directly via
+    # subprocess and let the user log in. The next non-login invocation uses
+    # the same .chrome-tv-manual profile and attaches to 9222 cleanly.
+    if mode == "login":
+        import subprocess as _sp
+        PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+        chrome_cmd = [
+            CHROME_BINARY,
+            f"--remote-debugging-port={DEBUG_PORT}",
+            f"--user-data-dir={PROFILE_DIR}",
+            "--disable-blink-features=AutomationControlled",
+            "--no-first-run",
+            "--no-default-browser-check",
+            CHART_URL,
+        ]
+        _sp.Popen(chrome_cmd, stdin=_sp.DEVNULL, stdout=_sp.DEVNULL,
+                  stderr=_sp.DEVNULL, start_new_session=True)
+        print(f"Spawned Chrome with debug port {DEBUG_PORT} + profile {PROFILE_DIR}.")
+        print("Log in with the Email option, then re-run without 'login' to place setups.")
+        return
+
+    driver, attached = _make_driver(launch_if_missing=False)
     if not attached or "tradingview.com/chart" not in driver.current_url:
         driver.get(CHART_URL)
         time.sleep(10)
@@ -316,12 +339,6 @@ def main() -> None:
         # Reset to a clean 1H layout: a prior run may have left the chart on 1D.
         driver.get(LAYOUT_URL)
         time.sleep(10)
-
-    if mode == "login":
-        driver.execute_cdp_cmd("Page.bringToFront", {})
-        print("Login window open (no automation flag). Log in with the Email option, "
-              "then re-run without 'login' to place setups.")
-        return
 
     if mode == "correct":
         # Surgically replace specific objects in place; leave the rest of the

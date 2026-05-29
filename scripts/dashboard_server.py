@@ -309,8 +309,11 @@ def _tv_chrome_alive(port: int = 9222) -> bool:
 
 
 def _run_tv_script(args: list[str], timeout: int = 60) -> dict:
-    """Subprocess-spawn place_fibs_tradingview.py with given args. Capture
-    stdout/stderr, return a JSON-friendly dict the frontend can render."""
+    """Subprocess-spawn place_fibs_tradingview.py with given args, captured
+    and synchronous. Used by /api/tv_place_setups (we want the placement
+    output back). NOT suitable for `login` mode -- selenium's chromedriver
+    keeps the captured-pipe alive long after Chrome is spawned, blocking us
+    for the full timeout. Use _spawn_tv_script_detached() for that."""
     import subprocess as _sp
     script = REPO_ROOT / "scripts" / "place_fibs_tradingview.py"
     venv_py = REPO_ROOT / ".venv" / "bin" / "python"
@@ -328,6 +331,28 @@ def _run_tv_script(args: list[str], timeout: int = 60) -> dict:
     except Exception as exc:
         return {"ok": False, "returncode": -1, "stdout": "",
                 "stderr": f"spawn failed: {exc!r}", "cmd": cmd}
+
+
+def _spawn_tv_script_detached(args: list[str]) -> dict:
+    """Fire-and-forget spawn. Pipes go to DEVNULL so chromedriver can't keep
+    them open. Returns immediately once Popen launches the child. Caller
+    polls /api/tv_status to detect when Chrome's debug port comes up."""
+    import subprocess as _sp
+    script = REPO_ROOT / "scripts" / "place_fibs_tradingview.py"
+    venv_py = REPO_ROOT / ".venv" / "bin" / "python"
+    py = str(venv_py) if venv_py.exists() else sys.executable
+    cmd = [py, str(script), *args]
+    try:
+        proc = _sp.Popen(cmd, cwd=str(REPO_ROOT),
+                         stdin=_sp.DEVNULL, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+                         env={**os.environ, "PYTHONPATH": str(REPO_ROOT)},
+                         start_new_session=True)
+        return {"ok": True, "spawned": True, "pid": proc.pid,
+                "note": "Chrome is launching; status will refresh shortly.",
+                "cmd": cmd}
+    except Exception as exc:
+        return {"ok": False, "spawned": False, "pid": -1,
+                "note": f"spawn failed: {exc!r}", "cmd": cmd}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -368,10 +393,10 @@ class Handler(BaseHTTPRequestHandler):
             if self.path.startswith("/api/feedback"):
                 self._send(200, save_feedback(body))
             elif self.path == "/api/tv_launch_chrome":
-                # Spawn login mode: opens Chrome with debug port, the user
-                # then logs into TradingView themselves. Selenium's first
-                # Chrome spawn can take ~30-60s as it downloads chromedriver.
-                self._send(200, _run_tv_script(["login"], timeout=120))
+                # Fire-and-forget: chromedriver keeps captured pipes open for
+                # minutes, so we detach. Frontend polls /api/tv_status to
+                # learn when Chrome's debug port is actually up.
+                self._send(200, _spawn_tv_script_detached(["login"]))
             elif self.path == "/api/tv_place_setups":
                 # Place N setups (default 12) on the already-running TV chart.
                 # Requires _tv_chrome_alive() == True (we don't recheck here --

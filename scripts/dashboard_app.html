@@ -518,8 +518,22 @@ async function tvLaunchChrome(){
   s.className = "status idle"; s.textContent = "spawning Chrome with the .chrome-tv-manual profile…";
   const res = await fetch("/api/tv_launch_chrome", {method:"POST"}).then(r=>r.json());
   tvShowOutput(res);
-  // Give Chrome a couple seconds to bind its debug port, then re-probe
-  setTimeout(tvRefreshStatus, 2500);
+  // Backend detaches immediately; we poll until Chrome's debug port is up.
+  let tries = 0;
+  const pollId = setInterval(async () => {
+    tries++;
+    s.className = "status idle";
+    s.textContent = `waiting for Chrome debug port… (${tries}/20)`;
+    const r = await fetch("/api/tv_status").then(r=>r.json()).catch(()=>({}));
+    if (r.chrome_alive){
+      clearInterval(pollId);
+      tvRefreshStatus();
+    } else if (tries >= 20){
+      clearInterval(pollId);
+      s.className = "status no";
+      s.textContent = "Chrome did not bind the debug port within 30s. Try running '.venv/bin/python scripts/place_fibs_tradingview.py login' from a terminal to see the actual error.";
+    }
+  }, 1500);
 }
 async function tvPlace(){
   const n = parseInt($("#tv-n").value || "12", 10);
