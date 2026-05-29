@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
-# tv-go.sh -- one-command full TV review journey.
+# tv-go.sh -- one-command TV review journey.
 #
 # What it does, end-to-end, in one shell:
 #   1. Verify (or launch + wait for) debug Chrome with the .chrome-tv-manual
 #      profile bound to port 9222. If Chrome wasn't running, you'll need to
 #      log into TradingView in the window that opens (one-time per profile).
-#   2. Place N setups (default 12) on the BITGET:BTCUSDT.P 1H chart as native
-#      Fib Retracement objects.
-#   3. Inject the floating WSAD review panel and walk through the setups one
-#      at a time, auto-panning the chart to each one. Verdicts append to
-#      data/discovery_bet_1/human_labels.jsonl.
+#   2. Inject the floating WSAD review panel and walk through every setup
+#      one at a time, auto-panning the chart to each one. Verdicts append
+#      to data/discovery_bet_1/human_labels.jsonl.
+#
+# Note: a separate up-front "place 12 setups" step was removed -- the review
+# panel wipes the chart anyway and places ONE setup at a time as you advance.
+# Use ./scripts/tv-place.sh independently if you just want to visually preview
+# N setups without committing to a full review.
 #
 # Usage:
-#   ./scripts/tv-go.sh              # 12 setups, recent-3M
-#   ./scripts/tv-go.sh 24           # 24 setups
-#   ./scripts/tv-go.sh manual       # the 8 reference setups
+#   ./scripts/tv-go.sh              # walk through the recent-3M setups (~35-40)
+#   ./scripts/tv-go.sh manual       # walk through the 8 reference setups
 #
 # Keys (while the panel is active in TradingView):
 #   W / Up      approve (✓ exaaactly to the ms)
@@ -57,21 +59,15 @@ else
   sleep 12
 fi
 
-# 2. Place setups
-echo
-echo "==> Placing setups on the chart (mode: $ARG)..."
-if [[ "$ARG" == "manual" || "$ARG" == "dry" ]]; then
-  env PYTHONPATH="$REPO_ROOT" "$VENV_PY" "$SCRIPT_DIR/place_fibs_tradingview.py" "$ARG" || true
-else
-  env PYTHONPATH="$REPO_ROOT" "$VENV_PY" "$SCRIPT_DIR/place_fibs_tradingview.py" "$ARG" || true
-fi
-
-# 3. Review session
+# 2. Review session (no separate placement step -- the review tool clears the
+#    chart and places ONE fib at a time as you advance with W/S/A/D anyway).
 echo
 echo "==> Starting WSAD review panel..."
 echo "    Switch to your TradingView Chrome window. Use:"
 echo "      W/Up=approve   S/Down=reject   A/Left=prev   D/Right=next   Enter=done"
 echo "    Verdicts append to data/discovery_bet_1/human_labels.jsonl."
+echo "    NOTE: the Object Tree shows ONE fib at a time (the current setup),"
+echo "          hidden behind the panel -- that is by design, not a bug."
 echo
 exec env PYTHONPATH="$REPO_ROOT" PYTHONUNBUFFERED=1 "$VENV_PY" \
   "$SCRIPT_DIR/review_fibs_tradingview.py" "$ARG"
