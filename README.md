@@ -164,22 +164,22 @@ The script auto-detects Chrome via `_find_chrome_binary()`. Override with
 #### Run the workflow (one canonical command — macOS and WSL identical)
 
 ```bash
-./scripts/tv-go.sh              # default: 12 setups, recent-3M
-./scripts/tv-go.sh 24           # 24 setups
-./scripts/tv-go.sh manual       # the 8 hand-picked reference setups
+./scripts/tv-go.sh              # walk through every recent-3M setup (~35-40)
+./scripts/tv-go.sh manual       # walk through the 8 hand-picked reference setups
 ```
 
 `tv-go.sh` does the full journey in one shell:
 
 1. **Checks Chrome on port 9222.** If not running, spawns debug Chrome with
-   the project-local profile (`.chrome-tv-manual/`) on the right chart URL,
-   waits up to 20s for the port to bind, then sleeps 12s so TradingView
-   can load its initial bars.
-2. **Places N setups** on the live chart as native Fib Retracement objects.
-3. **Reads TV's actual loaded bar range** and filters setups to those that
-   fall inside it (so the auto-pan never lands on an unplaceable timestamp).
-4. **Injects the WSAD review panel** and immediately drops you into the
-   first setup, with the chart auto-panned to it.
+   the project-local profile (`.chrome-tv-manual/`) on the BITGET BTCUSDT.P
+   1H chart URL, waits up to 20s for the port to bind, then sleeps 12s so
+   TradingView can load its initial bars.
+2. **Reads TV's actual loaded bar range** and filters the setup list to
+   those that fall inside it (so the auto-pan never lands on an unplaceable
+   timestamp). Adds "candidate" missing-setup entries between same-direction
+   pairs so they get reviewed too.
+3. **Injects the WSAD review panel** and drops you onto setup 1/N, with
+   the chart auto-panned to it.
 
 If this is the first run on a machine, you'll see the Chrome window open
 to TradingView's login screen — log in with Email (Google SSO can stall
@@ -188,26 +188,44 @@ in a fresh profile) and the script proceeds automatically.
 Three smaller scripts are also there if you want them callable individually:
 
 ```bash
-./scripts/tv-login.sh           # just spawn Chrome (no placement, no review)
-./scripts/tv-place.sh [N|dry]   # just place setups
-./scripts/tv-review.sh [mode]   # just start the review panel
+./scripts/tv-login.sh           # just spawn Chrome (no review session)
+./scripts/tv-place.sh [N|dry]   # just place N fibs as a visual preview (not a review)
+./scripts/tv-review.sh [mode]   # just start the review panel (assumes Chrome up)
 ```
 
-The WSAD overlay appears on the TradingView chart (NOT in the dashboard):
+The WSAD panel appears on the TradingView chart (NOT in the Phoenix dashboard):
 
 ```
-W / ↑      approve  (✓ exaaactly to the ms)
-S / ↓      reject   (✗ wtf - not a real setup)
+W / ↑      approve  (✓ exaaactly to the ms — VERDICT_ACCEPT)
+S / ↓      reject   (✗ wtf — VERDICT_REJECT)
 A / ←      back     (previous setup)
 D / →      next     (next setup)
 Enter      done     (end the review session)
 ```
 
-When you press W or S, the current setup gets a verdict in
-`data/discovery_bet_1/human_labels.jsonl`. The detector picks those up
+Each setup is placed and scored against the **0.941 entry regime** (the
+deep-pullback default — see `REGIMES[0]` in `scripts/execute_fib_strategy.py`).
+That's the verdict the panel shows at the top: outcome + R-multiple
+(e.g. `scratch — TP1 then break-even (+0.14R)`). The Phoenix dashboard's
+regime tabs let you compare the same setup against 0.882, 0.786, and the
+scaled three-tranche execution. The review panel only shows the 0.941 score
+to keep each review focused; tab through the dashboard for the other
+regimes.
+
+When you press W or S, the current setup gets a verdict appended to
+`data/discovery_bet_1/human_labels.jsonl`. The detector consumes that file
 on the next backtest run, so labels you give today shape tomorrow's
 scoring. Dragging the Fib's anchors in TradingView + clicking "Save edit"
-captures corrected anchors and writes them as a VERDICT_ADJUST entry.
+captures corrected anchors and writes them as a `VERDICT_ADJUST` entry.
+
+#### Why the Object Tree looks "empty" during review
+
+The review tool intentionally shows **one fib at a time** so you can focus
+on the current setup without overlapping prev/next drawings cluttering the
+chart. The Object Tree DOES contain exactly one entry (the current
+`<< REVIEWING >> i/N ...` fib), but it usually sits behind the floating
+panel on the right side of the chart. Drag the panel left if you want to
+see the tree entry.
 
 The login session persists in `.chrome-tv-manual/` (project-local, gitignored)
 — each contributor has their own. **Don't copy it between machines.**
