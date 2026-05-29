@@ -160,9 +160,12 @@ return {ok:true, points: pts.slice(0,2).map(pt=>({epoch: epochOf(pt), price: pt.
 
 CLEAR_JS = "const c=window._exposed_chartWidgetCollection; if(c){c._activeChartWidgetModel.value().removeAllDrawingTools();}"
 
-# After placing a Fib, pan the chart's visible time range to a window that
-# includes the parent and a bit past the terminal, so the user doesn't have
-# to scroll to find the current setup. Both timestamps are epoch seconds.
+# After placing a Fib, pan/zoom the TradingView chart so the current setup
+# is centered in the visible area. Uses TV's internal API methods discovered
+# via runtime probe of Chrome/148 (May 2026):
+#   chartModel.gotoTimeRange({from, to})   -- preferred, semantic
+#   timeScale.zoomToBarsRange(from, to)    -- bar-index fallback
+#   timeScale.scrollToBar(barIndex)        -- last-resort center-only scroll
 NAVIGATE_TO_FIB_JS = r"""
 const parentEpoch = arguments[0];
 const termEpoch = arguments[1];
@@ -170,44 +173,56 @@ const c = window._exposed_chartWidgetCollection;
 if (!c) return {ok:false, error:'no collection'};
 const widget = c._activeChartWidgetModel.value();
 const chartModel = widget.model();
+const ts = chartModel.timeScale();
 const series = widget.mainSeries();
 const bars = series.data();
 // Find candle indices for the two timestamps
 let parentIdx = null, termIdx = null;
 bars.each((index, value) => {
-    const ts = value[0];
-    if (ts === parentEpoch) parentIdx = index;
-    if (ts === termEpoch) termIdx = index;
+    const tsVal = value[0];
+    if (tsVal === parentEpoch) parentIdx = index;
+    if (tsVal === termEpoch) termIdx = index;
 });
-if (parentIdx === null || termIdx === null) {
-    return {ok:false, error:'timestamps not in loaded range',
-            parentEpoch, termEpoch, parentIdx, termIdx,
-            firstBar: bars.first(), lastBar: bars.last()};
-}
-// Pad: 25% of the leg span on each side, min 20 bars
-const span = Math.abs(termIdx - parentIdx);
+// Pad: 50% of the leg span on each side, min 20 bars
+const span = (parentIdx !== null && termIdx !== null) ?
+    Math.abs(termIdx - parentIdx) : 100;
 const pad = Math.max(20, Math.round(span * 0.5));
-const lo = Math.min(parentIdx, termIdx) - pad;
-const hi = Math.max(parentIdx, termIdx) + pad;
-// Set the visible time range. TradingView's timeScale supports
-// setVisibleLogicalRange which takes bar-index coords (logical = bar index).
+
+// Try 1: chartModel.gotoTimeRange (semantic, takes epoch seconds directly).
 try {
-    const ts = chartModel.timeScale();
-    if (ts.setLogicalRange) {
-        ts.setLogicalRange({from: lo, to: hi});
-        return {ok:true, parentIdx, termIdx, lo, hi};
-    }
-    // Fallback: older TV builds expose setVisibleRange with epoch seconds
-    if (ts.setVisibleRange) {
+    if (typeof chartModel.gotoTimeRange === 'function') {
         const padSecs = Math.max(3600, Math.abs(termEpoch - parentEpoch) * 0.5);
-        ts.setVisibleRange({from: Math.min(parentEpoch, termEpoch) - padSecs,
-                            to:   Math.max(parentEpoch, termEpoch) + padSecs});
-        return {ok:true, fallback:'setVisibleRange'};
+        chartModel.gotoTimeRange({
+            from: Math.min(parentEpoch, termEpoch) - padSecs,
+            to:   Math.max(parentEpoch, termEpoch) + padSecs,
+        });
+        return {ok:true, method:'gotoTimeRange', parentIdx, termIdx};
     }
-} catch (e) {
-    return {ok:false, error: String(e)};
-}
-return {ok:false, error:'no setLogicalRange or setVisibleRange on timeScale'};
+} catch (e) { /* try next */ }
+
+// Try 2: timeScale.zoomToBarsRange (needs bar indices in TV's loaded range)
+try {
+    if (parentIdx !== null && termIdx !== null &&
+            typeof ts.zoomToBarsRange === 'function') {
+        const lo = Math.min(parentIdx, termIdx) - pad;
+        const hi = Math.max(parentIdx, termIdx) + pad;
+        ts.zoomToBarsRange(lo, hi);
+        return {ok:true, method:'zoomToBarsRange', lo, hi};
+    }
+} catch (e) { /* try next */ }
+
+// Try 3: timeScale.scrollToBar (center on midpoint, don't zoom)
+try {
+    if (parentIdx !== null && termIdx !== null &&
+            typeof ts.scrollToBar === 'function') {
+        const mid = Math.round((parentIdx + termIdx) / 2);
+        ts.scrollToBar(mid);
+        return {ok:true, method:'scrollToBar', mid};
+    }
+} catch (e) { /* fall through */ }
+
+return {ok:false, error:'no working pan/zoom method',
+        parentIdx, termIdx, parentEpoch, termEpoch};
 """
 
 # A custom Fib template applies after creation and blanks the text we set, so the
@@ -611,29 +626,62 @@ def main() -> None:
         return
     print(f"Reviewing {len(setups)} setups ({mode}). Use the panel in the TradingView window.")
 
+    print("  [1/6] attaching to Chrome on port 9222...", flush=True)
     driver, attached = _make_driver()
+    print(f"  [1/6] attached. current URL: {driver.current_url[:80]}", flush=True)
     if not attached or "tradingview.com/chart" not in driver.current_url:
+        print("  [2/6] not on a TV chart; navigating + waiting 10s for load...", flush=True)
         driver.get(LAYOUT_URL)
         time.sleep(10)
+    else:
+        print("  [2/6] already on a TV chart, no navigation needed.", flush=True)
+    print("  [3/6] loading 3M bar range (up to 22s)...", flush=True)
     _load_recent_range(driver)
     # A freshly launched TradingView chart loads only a limited bar window, and
     # the date-range tabs are not always present to widen it. Keep only setups
     # whose anchors fall inside the currently-loaded bars so every shown setup
     # actually places. (Full-history loading is a separate, Codex-owned fix.)
-    loaded_n = driver.execute_script(
-        "let n=0; const c=window._exposed_chartWidgetCollection;"
-        "if(c){c._activeChartWidgetModel.value().model().mainSeries().data().each(()=>{n++});}"
-        " return n;"
-    ) or 0
-    if loaded_n and int(loaded_n) < len(candles):
-        # Margin so the earliest kept setup's anchor is safely inside the loaded
-        # window (the very first loaded bar can be just short of a boundary anchor).
-        cutoff = candles[max(0, len(candles) - int(loaded_n) + 60)].source_timestamp
-        kept = [s for s in setups if s["parent_ts"] >= cutoff and s["term_ts"] >= cutoff]
-        if kept:
-            print(f"Chart has {loaded_n} bars loaded -> reviewing {len(kept)} of "
-                  f"{len(setups)} setups that fall inside that window.")
+    print("  [4/6] reading TV's loaded bar range + filtering setups...", flush=True)
+    # Use TV's ACTUAL first/last bar timestamps, not a Python-computed offset.
+    # The CSV in Python and the live TV bars can have different start points
+    # (different exchange feeds, recent backfills) -- the offset approach
+    # passed setups that TV couldn't actually render, causing navigate-to-fib
+    # to fail with parentIdx=None and the user seeing a blank chart.
+    bar_range = driver.execute_script(
+        "const c=window._exposed_chartWidgetCollection;"
+        "if(!c) return null;"
+        "const d=c._activeChartWidgetModel.value().model().mainSeries().data();"
+        "const f=d.first(), l=d.last();"
+        "return {first: f && f.value[0], last: l && l.value[0], n: d.size()};"
+    )
+    if bar_range and bar_range.get("first") and bar_range.get("last"):
+        first_epoch, last_epoch = int(bar_range["first"]), int(bar_range["last"])
+        # Pad inward by 60 bars (~2.5 days at 1H) so anchors near the bar
+        # boundary still resolve cleanly.
+        pad_secs = 60 * 3600
+        from_epoch = first_epoch + pad_secs
+        kept = []
+        for s in setups:
+            try:
+                p_ep = int(datetime.fromisoformat(s["parent_ts"]).replace(
+                    tzinfo=ZoneInfo("UTC")).timestamp())
+                t_ep = int(datetime.fromisoformat(s["term_ts"]).replace(
+                    tzinfo=ZoneInfo("UTC")).timestamp())
+            except Exception:
+                continue
+            if p_ep >= from_epoch and t_ep <= last_epoch:
+                kept.append(s)
+        loaded_n = bar_range.get("n") or len(kept)
+        if kept and len(kept) < len(setups):
+            print(f"  TV loaded {loaded_n} bars ({bar_range['first']} -> "
+                  f"{bar_range['last']}); reviewing {len(kept)} of "
+                  f"{len(setups)} setups in that window.")
             setups[:] = kept
+        elif not kept:
+            print(f"  TV loaded only {loaded_n} bars -- NO setups fall in that "
+                  f"window. Scroll the chart left in TradingView to load more "
+                  f"history, then re-run.")
+            return
     # Insert CANDIDATE missing legs wherever two same-direction setups sit in a row.
     setups[:] = _expand_with_candidates(setups)
     idx_map = {c.source_timestamp: k for k, c in enumerate(candles)}
@@ -647,10 +695,12 @@ def main() -> None:
     ctx = svc._detect_chart_time_context(driver)
     maps = _build_epoch_maps(candles, [ctx.effective_chart_timezone, "UTC", "Asia/Nicosia"])
 
+    print("  [5/6] injecting WSAD review panel...", flush=True)
     driver.execute_script(INJECT_PANEL_JS)
     # Reset the panel's action counter so a restart never replays a stale click.
     driver.execute_script("window.__reviewSeq = 0; window.__reviewAction = null;")
     driver.execute_cdp_cmd("Page.bringToFront", {})
+    print("  [6/6] placing first setup + auto-panning chart...", flush=True)
 
     # Per-setup verdict so the panel shows accepted/rejected/adjusted/added.
     # Seed from existing labels (matched by anchor key) so prior reviews show too.

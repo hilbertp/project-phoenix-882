@@ -161,26 +161,36 @@ git pull origin main                # gets the latest commits from GitHub
 The script auto-detects Chrome via `_find_chrome_binary()`. Override with
 `export PHOENIX_CHROME_BINARY=/path/to/chrome` if needed.
 
-#### Run the workflow (canonical console commands — macOS and WSL identical)
-
-Three short scripts, run in this order. They're thin wrappers around the
-underlying Python (PYTHONPATH set, no `.venv/bin/python` typing) — short
-memorable names, copy-pasteable from anywhere.
+#### Run the workflow (one canonical command — macOS and WSL identical)
 
 ```bash
-# 1. open debug Chrome with the project-local profile + TradingView chart.
-#    Log into TV manually (Email login). Leave Chrome running.
-./scripts/tv-login.sh
+./scripts/tv-go.sh              # default: 12 setups, recent-3M
+./scripts/tv-go.sh 24           # 24 setups
+./scripts/tv-go.sh manual       # the 8 hand-picked reference setups
+```
 
-# 2. place N setups on the live chart as native Fib Retracement objects.
-./scripts/tv-place.sh           # default 12
-./scripts/tv-place.sh 24        # 24 setups
-./scripts/tv-place.sh dry       # print legs only, no browser action
+`tv-go.sh` does the full journey in one shell:
 
-# 3. WSAD review session: injects a floating panel onto the TV chart and
-#    walks through each placed setup. Verdicts append to human_labels.jsonl.
-./scripts/tv-review.sh          # review recent-3M setups
-./scripts/tv-review.sh manual   # review the 8 hand-picked reference setups
+1. **Checks Chrome on port 9222.** If not running, spawns debug Chrome with
+   the project-local profile (`.chrome-tv-manual/`) on the right chart URL,
+   waits up to 20s for the port to bind, then sleeps 12s so TradingView
+   can load its initial bars.
+2. **Places N setups** on the live chart as native Fib Retracement objects.
+3. **Reads TV's actual loaded bar range** and filters setups to those that
+   fall inside it (so the auto-pan never lands on an unplaceable timestamp).
+4. **Injects the WSAD review panel** and immediately drops you into the
+   first setup, with the chart auto-panned to it.
+
+If this is the first run on a machine, you'll see the Chrome window open
+to TradingView's login screen — log in with Email (Google SSO can stall
+in a fresh profile) and the script proceeds automatically.
+
+Three smaller scripts are also there if you want them callable individually:
+
+```bash
+./scripts/tv-login.sh           # just spawn Chrome (no placement, no review)
+./scripts/tv-place.sh [N|dry]   # just place setups
+./scripts/tv-review.sh [mode]   # just start the review panel
 ```
 
 The WSAD overlay appears on the TradingView chart (NOT in the dashboard):
