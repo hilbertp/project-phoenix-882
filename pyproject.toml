@@ -1,6 +1,6 @@
 [tool.ruff]
 line-length = 88
-include = ["apps/api/**/*.py", "apps/worker/**/*.py"]
+include = ["apps/api/**/*.py", "apps/bot/**/*.py", "apps/worker/**/*.py"]
 extend-exclude = [
   "apps/ui",
   "artifacts",
@@ -12,6 +12,11 @@ extend-exclude = [
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+# dashboard.py embeds a large HTML template with long lines inside inline
+# JS — wrapping mid-template harms readability and ruff can't see strings.
+"apps/bot/dashboard.py" = ["E501"]
 
 [tool.ruff.format]
 quote-style = "double"
