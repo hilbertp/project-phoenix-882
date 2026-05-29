@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DB1 — Interactive Review Dashboard</title>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; background: #0e1117; color: #d1d4dc;
+  font: 13.5px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+a { color: #2962ff; }
+.wrap { max-width: 1500px; margin: 0 auto; padding: 20px 20px 60px; }
+h1 { font-size: 20px; margin: 0 0 3px; }
+h3 { font-size: 12px; margin: 0 0 10px; font-weight: 600; color: #c7ccd6;
+  text-transform: uppercase; letter-spacing: .04em; }
+.sub { color: #787b86; margin: 0 0 16px; font-size: 12.5px; }
+.muted { color: #6b7785; font-weight: 400; }
+.tabs { display: flex; gap: 8px; margin: 0 0 16px; flex-wrap: wrap; }
+.tab { background: #1c2230; color: #9aa4b2; border: 1px solid #2a3142;
+  padding: 7px 15px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; }
+.tab.active { background: #2962ff; color: #fff; border-color: #2962ff; }
+.reg { color: #787b86; font-size: 12px; margin: 0 0 14px; font-family: ui-monospace, monospace; }
+.assetbar { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin: 0 0 14px;
+  font-size: 13px; color: #9aa4b2; }
+.assetbar select { background: #1c2230; color: #d1d4dc; border: 1px solid #2a3142;
+  border-radius: 7px; padding: 5px 10px; font-size: 13px; font-weight: 600; }
+#asset-sel { font-size: 14px; color: #fff; border-color: #2962ff; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(124px, 1fr));
+  gap: 10px; margin: 0 0 16px; }
+.kpi { background: #161b26; border: 1px solid #232a39; border-radius: 11px; padding: 12px 13px 10px; }
+.kpi-v { font-size: 21px; font-weight: 700; letter-spacing: -.5px; }
+.kpi-l { font-size: 11.5px; color: #c7ccd6; margin-top: 1px; font-weight: 600; }
+.kpi-s { font-size: 10.5px; color: #6b7785; }
+.row2 { display: grid; grid-template-columns: 1.8fr 1fr; gap: 12px; margin: 0 0 16px; }
+.card { background: #131722; border: 1px solid #232a39; border-radius: 11px; padding: 14px 16px; }
+.rr { display: flex; justify-content: space-between; padding: 5px 0; font-size: 12.5px;
+  border-bottom: 1px solid #1a2030; }
+.rr span { color: #9aa4b2; } .rr b { font-weight: 700; font-variant-numeric: tabular-nums; }
+.rr.cap { border-bottom: none; margin-top: 6px; padding-top: 8px; border-top: 1px solid #2a3142; }
+.filters { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin: 0 0 12px;
+  font-size: 12.5px; color: #9aa4b2; }
+.filters select, .filters input { background: #1c2230; color: #d1d4dc; border: 1px solid #2a3142;
+  border-radius: 7px; padding: 5px 8px; font-size: 12.5px; }
+.split { display: grid; grid-template-columns: minmax(440px, 1fr) minmax(560px, 1.25fr); gap: 14px;
+  align-items: start; }
+.tbl-wrap { background: #131722; border: 1px solid #232a39; border-radius: 11px;
+  max-height: 78vh; overflow: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th { text-align: left; color: #6b7785; font-weight: 600; padding: 8px 9px; position: sticky; top: 0;
+  background: #131722; border-bottom: 1px solid #232a39; cursor: pointer; user-select: none; white-space: nowrap; }
+td { padding: 7px 9px; border-bottom: 1px solid #1a2030; white-space: nowrap; }
+tbody tr { cursor: pointer; }
+tbody tr:hover td { background: #161b26; }
+tbody tr.sel td { background: #1b2740; }
+tr.unscored td { opacity: .5; }
+.badge { display: inline-block; padding: 1px 7px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+.pill { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+.detail { background: #131722; border: 1px solid #232a39; border-radius: 11px; padding: 14px 16px;
+  position: sticky; top: 14px; }
+.detail .empty { color: #6b7785; text-align: center; padding: 80px 0; }
+canvas { display: block; width: 100%; border-radius: 8px; }
+#equity { height: 200px; }
+#chart { height: 340px; }
+.mini { float: right; background: #1c2230; color: #9aa4b2; border: 1px solid #2a3142;
+  border-radius: 6px; padding: 3px 10px; font-size: 11px; font-weight: 600; cursor: pointer;
+  text-transform: none; letter-spacing: 0; }
+.mini.on { background: #2962ff; color: #fff; border-color: #2962ff; }
+.dl { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 10px 0; font-size: 12px; }
+.dl div { color: #9aa4b2; } .dl b { color: #d1d4dc; }
+.events { font-size: 11.5px; font-family: ui-monospace, monospace; color: #9aa4b2;
+  max-height: 130px; overflow: auto; margin: 8px 0; border: 1px solid #1a2030; border-radius: 8px; padding: 8px; }
+.events div { padding: 1px 0; }
+.fb { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 6px; }
+.btn { border: 1px solid #2a3142; background: #1c2230; color: #d1d4dc; border-radius: 8px;
+  padding: 8px 13px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.btn:hover { border-color: #3a4a6a; }
+.btn.ok { border-color: #1f6f63; color: #6fe0cf; } .btn.ok:hover { background: #14241f; }
+.btn.no { border-color: #7a2f31; color: #ff9a9c; } .btn.no:hover { background: #241516; }
+.btn.adj { border-color: #7a6a1f; color: #f0d36a; } .btn.adj:hover { background: #221f12; }
+.btn.on { background: #2962ff; color: #fff; border-color: #2962ff; }
+/* TV launcher modal */
+.tv-overlay { position: fixed; inset: 0; background: rgba(8,10,14,0.72); display: none;
+  align-items: center; justify-content: center; z-index: 100; }
+.tv-overlay.show { display: flex; }
+.tv-modal { background: #131722; border: 1px solid #2a3142; border-radius: 12px;
+  padding: 18px 22px; width: min(560px, 92vw); color: #d1d4dc; font-size: 13px; }
+.tv-modal h3 { font-size: 14px; margin: 0 0 12px; color: #fff; font-weight: 700; }
+.tv-modal .row { margin: 10px 0; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.tv-modal .status { padding: 8px 10px; border-radius: 6px; font-family: ui-monospace, monospace;
+  font-size: 11.5px; }
+.tv-modal .status.ok { background: #14241f; color: #6fe0cf; border: 1px solid #1f6f63; }
+.tv-modal .status.no { background: #241516; color: #ff9a9c; border: 1px solid #7a2f31; }
+.tv-modal .status.idle { background: #1c2230; color: #9aa4b2; border: 1px solid #2a3142; }
+.tv-modal pre { background: #0e1117; border: 1px solid #232a39; border-radius: 6px;
+  padding: 8px 10px; font-size: 10.5px; max-height: 240px; overflow: auto; color: #9aa4b2;
+  font-family: ui-monospace, monospace; }
+.tv-modal .x { float: right; cursor: pointer; color: #6b7785; font-size: 18px; line-height: 1; }
+.tv-modal .x:hover { color: #d1d4dc; }
+.tv-modal input[type=number] { background: #1c2230; color: #d1d4dc; border: 1px solid #2a3142;
+  border-radius: 6px; padding: 5px 8px; width: 70px; font-size: 13px; }
+textarea { width: 100%; background: #1c2230; color: #d1d4dc; border: 1px solid #2a3142;
+  border-radius: 8px; padding: 7px; font-size: 12px; resize: vertical; min-height: 38px; margin-top: 6px; }
+.toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: #1b2740;
+  border: 1px solid #2962ff; color: #d6e2ff; padding: 10px 18px; border-radius: 9px; font-size: 13px;
+  opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 50; }
+.toast.show { opacity: 1; }
+.hint { font-size: 11.5px; color: #f0d36a; margin: 6px 0; min-height: 16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>DB1 — Interactive Review Dashboard</h1>
+  <p class="sub" id="sub">loading…</p>
+  <div class="assetbar">
+    <label>Asset <select id="asset-sel"></select></label>
+    <span id="det-controls" style="display:none">
+      <label>detector min-bars <select id="det-mb"></select></label>
+      <label>ATR&times; <select id="det-mult"></select></label>
+    </span>
+    <span class="muted" id="asset-note"></span>
+    <span style="flex:1"></span>
+    <button id="tv-launch-btn" class="btn">Manual review in TradingView</button>
+  </div>
+  <div class="tabs" id="tabs"></div>
+  <div class="reg" id="reg"></div>
+  <div class="kpis" id="kpis"></div>
+  <div class="row2">
+    <div class="card"><h3>Equity curve <span class="muted" id="eqsub"></span>
+      <button id="eq-overlay" class="mini">overlay all</button></h3>
+      <canvas id="equity"></canvas></div>
+    <div class="card" id="rrcard"></div>
+  </div>
+  <div class="filters">
+    <span>Filter:</span>
+    <label>outcome <select id="f-outcome"><option value="">all</option></select></label>
+    <label>direction <select id="f-dir"><option value="">all</option><option value="up">long</option><option value="down">short</option></select></label>
+    <label>verdict <select id="f-verdict"><option value="">all</option><option value="accept">accept</option><option value="adjust">adjust</option><option value="add">add</option><option value="reject">reject/wtf</option></select></label>
+    <span class="muted" id="count"></span>
+  </div>
+  <div class="split">
+    <div class="tbl-wrap"><table id="tbl"><thead></thead><tbody></tbody></table></div>
+    <div class="detail" id="detail"><div class="empty">Select a setup to inspect its chart, execution, and give feedback.</div></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<div class="tv-overlay" id="tv-overlay">
+  <div class="tv-modal">
+    <span class="x" id="tv-close">×</span>
+    <h3>Manual review in TradingView</h3>
+    <div class="row"><div class="status idle" id="tv-status">checking Chrome…</div></div>
+    <div class="row" id="tv-launch-row" style="display:none">
+      <span>Debug Chrome isn't running.</span>
+      <button class="btn" id="tv-launch-chrome">Launch Chrome for TV login</button>
+    </div>
+    <div class="row" id="tv-place-row" style="display:none">
+      <label>Place
+        <input type="number" id="tv-n" value="12" min="1" max="50">
+      setups on the chart</label>
+      <button class="btn ok" id="tv-place">Place</button>
+    </div>
+    <div class="row" id="tv-output-row" style="display:none">
+      <pre id="tv-output"></pre>
+    </div>
+    <div class="row" style="color:#6b7785;font-size:12px;">
+      After placement, close this modal and review each setup on the chart.
+      Use the per-setup feedback buttons below to record verdicts.
+    </div>
+  </div>
+</div>
+<script>
+const VCOLOR = { accept:"#26a69a", adjust:"#f0b90b", add:"#8957e5", reject:"#ef5350" };
+let state=null, reg=null, sel=null, sortKey="term_ts", sortDir=1;
+let adjustMode=false, picks=[], overlay=false;
+let asset="btc", detMB="6", detMult="2.0";
+
+const $ = s => document.querySelector(s);
+const fmtTs = t => `${t.slice(5,7)}-${t.slice(8,10)} ${t.slice(11,13)}h`;
+const pct = x => (x*100).toFixed(0)+"%";
+
+async function load(){
+  const r = await fetch(`/api/state?asset=${asset}&min_bars=${detMB}&mult=${detMult}`);
+  state = await r.json();
+  if(!reg) reg = state.regimes[0].slug;
+  buildOutcomeFilter();
+  renderAll();
+}
+function renderAll(){
+  renderAssetBar();
+  const src = state.source==="reviewed"
+    ? `${state.n_scored} human-reviewed setups · feedback enabled`
+    : `${state.n_setups} detector setups (${state.detector.min_bars}c / ${state.detector.mult}× ATR) · raw, unreviewed`;
+  $("#sub").textContent = `${state.symbol} · ${src} · click any row to inspect`;
+  renderTabs(); renderKPIs(); renderEquity(); renderRR(); renderTable(); renderDetail();
+}
+function renderAssetBar(){
+  const as=$("#asset-sel");
+  as.innerHTML = state.assets.map(a=>`<option value="${a.key}" ${a.key===asset?"selected":""}>${a.label}</option>`).join("");
+  as.onchange=()=>{ asset=as.value; sel=null; overlay=false; load(); };
+  const det = state.source==="detector";
+  $("#det-controls").style.display = det?"":"none";
+  $("#asset-note").textContent = det ? "detector output — no human review" : "human-reviewed (feedback writes to labels)";
+  if(det){
+    const mb=$("#det-mb"), mu=$("#det-mult");
+    mb.innerHTML=[6,9,12,18,24,36].map(v=>`<option ${v==state.detector.min_bars?"selected":""}>${v}</option>`).join("");
+    mu.innerHTML=[2.0,2.5,3.0,4.0].map(v=>`<option ${v==state.detector.mult?"selected":""}>${v.toFixed(1)}</option>`).join("");
+    mb.onchange=()=>{ detMB=mb.value; sel=null; load(); };
+    mu.onchange=()=>{ detMult=mu.value; sel=null; load(); };
+  }
+}
+function renderTabs(){
+  $("#tabs").innerHTML = state.regimes.map(r =>
+    `<button class="tab ${r.slug===reg?'active':''}" data-r="${r.slug}">${r.label}</button>`).join("");
+  document.querySelectorAll('.tab').forEach(b => b.onclick = () => { reg=b.dataset.r; renderAll(); });
+  const p = state.regimes.find(r=>r.slug===reg).params;
+  $("#reg").textContent = Object.entries(p).map(([k,v])=>`${k.replace('_c','').replace('_',' ')} ${v}`).join("   |   ");
+}
+function kpi(l,v,s,c){ return `<div class="kpi"><div class="kpi-v" style="color:${c||'#d1d4dc'}">${v}</div><div class="kpi-l">${l}</div><div class="kpi-s">${s}</div></div>`; }
+function renderKPIs(){
+  const a = state.agg[reg], C = state.colors, be = a.breakeven_wr;
+  const beats = be!=null && a.win_rate>be;
+  $("#kpis").innerHTML = [
+    kpi("Win rate", pct(a.win_rate), `${a.wins}/${a.n} triggered`, C.win),
+    kpi("Loss rate", pct(a.loss_rate), `${a.losses}/${a.n}`, C.loss),
+    kpi("Avg R / trade", (a.avg_r>=0?"+":"")+a.avg_r.toFixed(3), "expectancy", a.avg_r>=0?C.win:C.loss),
+    kpi("Max R", a.max_r.toFixed(1)+"R", "full win / 1R", C.win),
+    kpi("Avg winner", (a.avg_win>=0?"+":"")+a.avg_win.toFixed(2)+"R", `of ${a.max_r.toFixed(1)}R avail`, a.avg_win>0?C.win:"#6b7785"),
+    kpi("Break-even WR", be!=null?pct(be):"n/a", "actual "+pct(a.win_rate), beats?C.win:C.loss),
+    kpi("Total R", (a.total_r>=0?"+":"")+a.total_r.toFixed(1), `over ${a.n}`, a.total_r>=0?C.win:C.loss),
+    kpi("Triggered", a.n, `${a.shrug} shrug excl`, "#2962ff"),
+  ].join("");
+}
+function renderRR(){
+  const a = state.agg[reg], C = state.colors;
+  const rows = a.rr_rows.map(r => {
+    const style = r.cap ? `color:${r.pos?C.win:C.loss}` : "";
+    return `<div class="rr ${r.cap?'cap':''}"><span>${r.label}</span><b style="${style}">${r.value}</b></div>`;
+  }).join("");
+  $("#rrcard").innerHTML = `<h3>Reward : risk &amp; expectancy</h3>${rows}`;
+}
+const PALETTE=["#2962ff","#f0b90b","#ef5350","#26a69a","#8957e5"];
+function regimeColor(slug){ const i=state.regimes.findIndex(r=>r.slug===slug); return PALETTE[i%PALETTE.length]; }
+function regimeCurve(slug){
+  let cum=0; const pts=[0];
+  state.setups.filter(s=>s.scored && s.by_regime[slug] && s.by_regime[slug].kind!=="shrug")
+    .forEach(s=>{ cum+=s.by_regime[slug].r; pts.push(cum); });
+  return pts;
+}
+// Static y-domain shared by every regime so the curves are visually comparable.
+function globalDomain(){
+  let lo=0, hi=0;
+  state.regimes.forEach(r=>{ const p=regimeCurve(r.slug); lo=Math.min(lo,...p); hi=Math.max(hi,...p); });
+  return [Math.min(-1,Math.floor(lo)), Math.max(10,Math.ceil(hi))];
+}
+function niceTicks(lo,hi){
+  const raw=(hi-lo)/3 || 1;
+  const mag=Math.pow(10,Math.floor(Math.log10(raw)));
+  const step=([1,2,5,10].find(m=>m*mag>=raw)||10)*mag;
+  const out=[]; for(let v=Math.ceil(lo/step)*step; v<=hi+1e-9; v+=step) out.push(Math.round(v*100)/100);
+  if(lo<=0&&hi>=0&&!out.some(v=>Math.abs(v)<1e-9)) out.push(0);
+  return out;
+}
+function eqAxis(x,lo,hi,pl,pr,pt,pb,W,H){
+  const ih=H-pt-pb, Y=v=>pt+ih*(1-(v-lo)/(hi-lo));
+  x.font="10px sans-serif"; x.textAlign="right";
+  niceTicks(lo,hi).forEach(v=>{
+    x.beginPath(); x.moveTo(pl,Y(v)); x.lineTo(W-pr,Y(v));
+    x.strokeStyle=Math.abs(v)<1e-9?"#3a4256":"#283044"; x.lineWidth=1; x.stroke();
+    x.fillStyle="#6b7785"; x.fillText((v>=0?"+":"")+v+"R", pl-5, Y(v)+3);
+  });
+  return Y;
+}
+function renderEquity(){
+  const cv=$("#equity"), btn=$("#eq-overlay");
+  if(btn){ btn.classList.toggle("on",overlay); btn.onclick=()=>{ overlay=!overlay; renderEquity(); }; }
+  const [lo,hi]=globalDomain();
+  const dpr=devicePixelRatio||1, W=cv.clientWidth, H=cv.clientHeight;
+  cv.width=W*dpr; cv.height=H*dpr; const x=cv.getContext("2d"); x.scale(dpr,dpr); x.clearRect(0,0,W,H);
+  const pl=46,pr=14,pt=12,pb=20, iw=W-pl-pr, Y=eqAxis(x,lo,hi,pl,pr,pt,pb,W,H);
+  if(overlay){
+    const series=state.regimes.map(r=>({pts:regimeCurve(r.slug),color:regimeColor(r.slug),label:r.label}));
+    const maxN=Math.max(...series.map(s=>s.pts.length));
+    series.forEach(s=>{ const X=i=>pl+iw*(i/((maxN-1)||1));
+      x.beginPath(); s.pts.forEach((v,i)=>i?x.lineTo(X(i),Y(v)):x.moveTo(X(i),Y(v)));
+      x.strokeStyle=s.color; x.lineWidth=1.8; x.stroke(); });
+    x.font="11px sans-serif"; x.textAlign="left";
+    series.forEach((s,k)=>{ const ly=pt+8+k*15, end=s.pts[s.pts.length-1];
+      x.fillStyle=s.color; x.fillRect(pl+8,ly-7,12,3);
+      x.fillStyle="#c7ccd6"; x.fillText(`${s.label}  ${end>=0?"+":""}${end.toFixed(1)}R`, pl+24, ly); });
+    $("#eqsub").textContent="(all regimes · same scale · x = trade #)";
+  } else {
+    const pts=regimeCurve(reg), X=i=>pl+iw*(i/((pts.length-1)||1));
+    const col=pts[pts.length-1]>=0?state.colors.win:state.colors.loss;
+    x.beginPath(); pts.forEach((v,i)=>i?x.lineTo(X(i),Y(v)):x.moveTo(X(i),Y(v))); x.strokeStyle=col; x.lineWidth=2; x.stroke();
+    x.lineTo(X(pts.length-1),Y(0)); x.lineTo(X(0),Y(0)); x.closePath(); x.fillStyle=col+"22"; x.fill();
+    $("#eqsub").textContent=`(cumulative R over ${pts.length-1} triggered · same scale)`;
+  }
+}
+function buildOutcomeFilter(){
+  const sel=$("#f-outcome");
+  sel.innerHTML='<option value="">all</option>';  // reset (idempotent across asset reloads)
+  Object.entries(state.kind_label).forEach(([k,lbl])=>{ const o=document.createElement("option"); o.value=k; o.textContent=lbl.split(" ")[0]; sel.appendChild(o); });
+  ["f-outcome","f-dir","f-verdict"].forEach(id=>$("#"+id).onchange=renderTable);
+}
+function filtered(){
+  const fo=$("#f-outcome").value, fd=$("#f-dir").value, fv=$("#f-verdict").value;
+  let rows = state.setups.filter(s=>{
+    const k = s.by_regime[reg]?s.by_regime[reg].kind:"shrug";
+    if(fo && k!==fo) return false;
+    if(fd && s.direction!==fd) return false;
+    if(fv && s.verdict!==fv) return false;
+    return true;
+  });
+  rows.sort((a,b)=>{
+    let va,vb;
+    if(sortKey==="r"){ va=a.by_regime[reg]?a.by_regime[reg].r:0; vb=b.by_regime[reg]?b.by_regime[reg].r:0; }
+    else if(sortKey==="depth"){ va=a.by_regime[reg]?a.by_regime[reg].depth:0; vb=b.by_regime[reg]?b.by_regime[reg].depth:0; }
+    else { va=a[sortKey]; vb=b[sortKey]; }
+    return (va>vb?1:va<vb?-1:0)*sortDir;
+  });
+  return rows;
+}
+function renderTable(){
+  const cols=[["id","#"],["direction","dir"],["term_ts","date"],["depth","ATR"],["verdict","verdict"],["outcome","outcome"],["r","R"]];
+  $("#tbl thead").innerHTML = "<tr>"+cols.map(([k,l])=>`<th data-k="${k}">${l}${sortKey===k?(sortDir>0?" ▲":" ▼"):""}</th>`).join("")+"</tr>";
+  document.querySelectorAll("th").forEach(th=>th.onclick=()=>{ const k=th.dataset.k; if(sortKey===k)sortDir*=-1; else{sortKey=k;sortDir=1;} renderTable(); });
+  const rows=filtered();
+  $("#count").textContent = `${rows.length} shown`;
+  $("#tbl tbody").innerHTML = rows.map(s=>{
+    const d=s.by_regime[reg], k=d?d.kind:"shrug", oc=state.colors[k]||"#9aa4b2";
+    const r=d?d.r:0, rc=r>0?state.colors.win:(r<0?state.colors.loss:"#6b7785");
+    return `<tr data-key="${s.key}" class="${s.scored?'':'unscored'} ${s.key===sel?'sel':''}">
+      <td>${s.id}</td>
+      <td style="color:${s.direction==='up'?state.colors.win:state.colors.loss}">${s.direction==='up'?'long':'short'}</td>
+      <td class="muted">${fmtTs(s.term_ts)}</td>
+      <td>${d?d.depth.toFixed(1):'–'}×</td>
+      <td><span class="badge" style="color:${VCOLOR[s.verdict]||'#9aa4b2'}">${s.verdict}</span></td>
+      <td><span class="pill" style="background:${oc}"></span>${d?d.kind_label:'–'}</td>
+      <td style="color:${rc};text-align:right">${d?(r>=0?'+':'')+r.toFixed(2):'–'}</td></tr>`;
+  }).join("");
+  document.querySelectorAll("#tbl tbody tr").forEach(tr=>tr.onclick=()=>{ sel=tr.dataset.key; adjustMode=false; picks=[]; renderTable(); renderDetail(); });
+}
+function setupByKey(k){ return state.setups.find(s=>s.key===k); }
+function renderDetail(){
+  const el=$("#detail");
+  if(!sel){ el.innerHTML='<div class="empty">Select a setup to inspect its chart, execution, and give feedback.</div>'; return; }
+  const s=setupByKey(sel); if(!s){ sel=null; return renderDetail(); }
+  const d=s.by_regime[reg];
+  el.innerHTML = `
+    <h3>${s.id} · <span style="color:${s.direction==='up'?state.colors.win:state.colors.loss}">${s.direction==='up'?'LONG':'SHORT'}</span>
+      · ${fmtTs(s.parent_ts)} → ${fmtTs(s.term_ts)}
+      <span class="badge" style="float:right;color:${VCOLOR[s.verdict]||'#9aa4b2'}">verdict: ${s.verdict}</span></h3>
+    <canvas id="chart" height="300"></canvas>
+    <div class="hint" id="hint"></div>
+    <div class="dl">
+      <div>outcome <b style="color:${state.colors[d?d.kind:'shrug']}">${d?d.kind_label:'–'}</b></div>
+      <div>result <b>${d?(d.r>=0?'+':'')+d.r.toFixed(2)+'R':'–'}</b></div>
+      <div>span <b>${d?d.span.toFixed(0):'–'}</b></div>
+      <div>depth <b>${d?d.depth.toFixed(1):'–'}× ATR</b></div>
+      <div>entry <b>${d&&d.level_lines.find(L=>L.role==='entry')?d.level_lines.find(L=>L.role==='entry').price.toFixed(1):'–'}</b></div>
+      <div>SL <b>${d&&d.level_lines.find(L=>L.role==='sl')?d.level_lines.find(L=>L.role==='sl').price.toFixed(1):'–'}</b></div>
+    </div>
+    <div class="events" id="events"></div>
+    ${state.source==="reviewed" ? `<div class="fb">
+      <button class="btn ok" id="b-acc">✓ exaaactly to the ms</button>
+      <button class="btn no" id="b-rej">✗ Outcome wrong (wtf)</button>
+      <button class="btn adj" id="b-adj">✎ Fix anchors</button>
+    </div>
+    <textarea id="note" placeholder="optional note (saved with your feedback)…"></textarea>`
+    : `<div class="muted" style="margin-top:12px;font-size:12px">Detector setups (raw, unreviewed) — in-dashboard feedback is BTC-only for now.</div>`}`;
+  $("#events").innerHTML = (d&&d.events.length)? d.events.map(e=>`<div>${fmtTs(e.ts)} · ${e.label} @ ${e.price.toFixed(1)}</div>`).join("")
+      : '<div class="muted">no trade — entry level never tagged (shrug)</div>';
+  if(state.source==="reviewed"){
+    $("#b-acc").onclick=()=>submit("accept");
+    $("#b-rej").onclick=()=>submit("reject");
+    $("#b-adj").onclick=()=>toggleAdjust();
+  }
+  drawChart(s,d);                          // sync: reading clientWidth forces layout
+  requestAnimationFrame(()=>drawChart(s,d)); // again next frame in case width was 0
+  updateHint();
+}
+function updateHint(){
+  const h=$("#hint"); if(!h) return;
+  if(adjustMode){ h.textContent = picks.length===0 ? "Adjust mode: click the PARENT candle (start of the leg)."
+      : "Now click the TERMINAL candle (the extreme). Click ✎ again to cancel."; }
+  else h.textContent="";
+}
+function toggleAdjust(){ adjustMode=!adjustMode; picks=[]; $("#b-adj").classList.toggle("on",adjustMode); updateHint(); renderDetail2Keep(); }
+function renderDetail2Keep(){ const s=setupByKey(sel); drawChart(s,s.by_regime[reg]); updateHint(); }
+
+let chartMap=null;
+function drawChart(s,d){
+  const cv=$("#chart"); if(!cv) return;
+  const base=state.base_i, PADC=28;
+  const exitAbs = d&&d.exit_i!=null? d.exit_i : s.term_i;
+  let lo=Math.max(0,(s.parent_i-base)-PADC), hi=Math.min(state.candles.length-1,(exitAbs-base)+PADC);
+  const win=state.candles.slice(lo,hi+1);
+  let pmin=Infinity,pmax=-Infinity;
+  win.forEach(c=>{ pmin=Math.min(pmin,c.l); pmax=Math.max(pmax,c.h); });
+  const llines=d&&d.level_lines?d.level_lines:[];
+  llines.forEach(L=>{ pmin=Math.min(pmin,L.price); pmax=Math.max(pmax,L.price); });
+  pmin=Math.min(pmin,s.parent_price,s.term_price); pmax=Math.max(pmax,s.parent_price,s.term_price);
+  const padp=(pmax-pmin)*0.06||1; pmin-=padp; pmax+=padp;
+  const dpr=devicePixelRatio||1, W=cv.clientWidth, H=cv.clientHeight;
+  cv.width=W*dpr; cv.height=H*dpr; const x=cv.getContext("2d"); x.scale(dpr,dpr); x.clearRect(0,0,W,H);
+  const pl=52,prr=12,pt=10,pb=22, iw=W-pl-prr, ih=H-pt-pb;
+  const n=win.length, bw=Math.max(1.5,Math.min(14, iw/n*0.7));
+  const X=i=>pl+iw*((i+0.5)/n), Y=p=>pt+ih*(1-(p-pmin)/(pmax-pmin));
+  chartMap={lo,base,n,X,xToIdx:px=>Math.floor((px-pl)/iw*n)};
+  // fib level lines (role-colored; works for single-entry and scaled)
+  const roleColor={entry:"#2962ff", sl:state.colors.loss, tp:state.colors.win, be:state.colors.scratch};
+  const lines = llines.map(L=>[L.price, roleColor[L.role]||"#9aa4b2", L.label]);
+  x.font="10px sans-serif"; x.textBaseline="middle";
+  lines.forEach(([p,c,lbl])=>{ if(p<pmin||p>pmax) return; const y=Y(p);
+    x.strokeStyle=c; x.globalAlpha=.5; x.setLineDash([4,3]); x.beginPath(); x.moveTo(pl,y); x.lineTo(W-prr,y); x.stroke();
+    x.setLineDash([]); x.globalAlpha=1; x.fillStyle=c; x.textAlign="left"; x.fillText(lbl,pl+2,y-5);
+    x.fillStyle="#6b7785"; x.textAlign="right"; x.fillText(p.toFixed(0),pl-4,y); });
+  // candles
+  win.forEach((c,i)=>{ const up=c.c>=c.o, col=up?state.colors.win:state.colors.loss, cx=X(i);
+    x.strokeStyle=col; x.beginPath(); x.moveTo(cx,Y(c.h)); x.lineTo(cx,Y(c.l)); x.stroke();
+    const yo=Y(c.o),yc=Y(c.c); x.fillStyle=col; x.fillRect(cx-bw/2,Math.min(yo,yc),bw,Math.max(1,Math.abs(yc-yo))); });
+  // parent / terminal markers
+  mark(x,X((s.parent_i-base)-lo),Y(s.parent_price),"#8957e5","P");
+  mark(x,X((s.term_i-base)-lo),Y(s.term_price),"#8957e5","T");
+  // entry / exit
+  if(d&&d.entry_i!=null&&d.events.length) mark(x,X((d.entry_i-base)-lo),Y(d.events[0].price),"#2962ff","▶");
+  if(d&&d.exit_i!=null&&d.events.length){ const e=d.events[d.events.length-1];
+    mark(x,X((d.exit_i-base)-lo),Y(e.price), d.kind==='loss'?state.colors.loss:state.colors.win, "■"); }
+  // adjust picks
+  picks.forEach((pk,j)=>{ const li=(pk.absi-base)-lo; if(li>=0&&li<n) mark(x,X(li),Y(pk.price),"#f0d36a",j===0?"P*":"T*"); });
+  // x axis dates
+  x.fillStyle="#6b7785"; x.textAlign="center"; x.textBaseline="top";
+  [0,Math.floor(n/2),n-1].forEach(i=>{ if(win[i]) x.fillText(win[i].t.slice(5,10), X(i), H-pb+5); });
+  cv.onclick = ev=>onChartClick(ev,s,win,lo);
+}
+function mark(x,cx,cy,col,txt){ x.fillStyle=col; x.beginPath(); x.arc(cx,cy,4,0,7); x.fill();
+  x.fillStyle=col; x.font="bold 10px sans-serif"; x.textAlign="center"; x.textBaseline="bottom"; x.fillText(txt,cx,cy-5); }
+function onChartClick(ev,s,win,lo){
+  if(!adjustMode) return;
+  const cv=$("#chart"), rect=cv.getBoundingClientRect();
+  let li=chartMap.xToIdx(ev.clientX-rect.left); li=Math.max(0,Math.min(win.length-1,li));
+  const c=win[li], absi=lo+li+state.base_i;
+  // first pick = parent, second = terminal; snap to extreme by direction
+  const isParent = picks.length===0;
+  const dir=s.direction;
+  const price = isParent ? (dir==='down'? c.h : c.l) : (dir==='down'? c.l : c.h);
+  picks.push({absi, ts:c.t, price, kind: isParent?(dir==='down'?'high':'low'):(dir==='down'?'low':'high')});
+  if(picks.length>2) picks=picks.slice(-1); // restart if a 3rd click
+  if(picks.length===2 && picks[1].absi<=picks[0].absi){ // terminal must be after parent
+    flash("terminal must be after parent — restarting"); picks=[picks[1]]; }
+  updateHint(); renderDetail2Keep();
+  if(picks.length===2) showAdjustSave(s);
+}
+function showAdjustSave(s){
+  const h=$("#hint");
+  h.innerHTML = `parent ${fmtTs(picks[0].ts)} @ ${picks[0].price.toFixed(0)} → terminal ${fmtTs(picks[1].ts)} @ ${picks[1].price.toFixed(0)}
+    &nbsp;<button class="btn adj" id="b-save">Save corrected setup</button>`;
+  $("#b-save").onclick=()=>{
+    const corrected={ direction:s.direction, parent_ts:picks[0].ts, parent_price:picks[0].price,
+      parent_kind:picks[0].kind, term_ts:picks[1].ts, term_price:picks[1].price, term_kind:picks[1].kind };
+    sel = picks[0].ts+"|"+picks[1].ts; // will be the new displayed key
+    submit("adjust", corrected);
+  };
+}
+async function submit(verdict, corrected){
+  const note = $("#note") ? $("#note").value : "";
+  let payload;
+  if(corrected){
+    payload = { parent_ts:corrected.parent_ts, term_ts:corrected.term_ts, direction:corrected.direction,
+      parent_price:corrected.parent_price, term_price:corrected.term_price, verdict, corrected, note };
+  } else {
+    const cur = setupByKey(sel);
+    payload = { parent_ts:cur.parent_ts, term_ts:cur.term_ts, direction:cur.direction,
+      parent_price:cur.parent_price, term_price:cur.term_price, verdict, note };
+  }
+  const r = await fetch("/api/feedback",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+  const res = await r.json();
+  if(res.ok){ flash(`saved: ${verdict}${corrected?" (anchors corrected)":""}`); adjustMode=false; picks=[];
+    if(!corrected) sel = payload.parent_ts+"|"+payload.term_ts;
+    await load();
+  } else flash("error: "+(res.error||"failed"));
+}
+function flash(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),2200); }
+addEventListener("resize",()=>{ if(state){ renderEquity(); if(sel){ const s=setupByKey(sel); if(s) drawChart(s,s.by_regime[reg]); } } });
+
+// ---------- TradingView review launcher ----------
+async function tvRefreshStatus(){
+  const s = $("#tv-status"), launchRow = $("#tv-launch-row"), placeRow = $("#tv-place-row");
+  s.className = "status idle"; s.textContent = "checking Chrome…";
+  try{
+    const r = await fetch("/api/tv_status").then(r=>r.json());
+    if(r.chrome_alive){
+      s.className = "status ok";
+      s.textContent = "Chrome debug session is up (port 9222). Ready to place setups.";
+      launchRow.style.display = "none";
+      placeRow.style.display = "flex";
+    } else {
+      s.className = "status no";
+      s.textContent = "Chrome debug session is NOT running. Start it first, log into TradingView, then come back.";
+      launchRow.style.display = "flex";
+      placeRow.style.display = "none";
+    }
+  } catch(e){
+    s.className = "status no";
+    s.textContent = "error talking to /api/tv_status: " + e;
+  }
+}
+function tvShowOutput(res){
+  const row = $("#tv-output-row"), pre = $("#tv-output");
+  row.style.display = "flex";
+  pre.textContent =
+    `exit code: ${res.returncode}\n` +
+    (res.stdout ? `--- stdout ---\n${res.stdout}` : "") +
+    (res.stderr ? `\n--- stderr ---\n${res.stderr}` : "");
+}
+async function tvLaunchChrome(){
+  const s = $("#tv-status");
+  s.className = "status idle"; s.textContent = "spawning Chrome with the .chrome-tv-manual profile…";
+  const res = await fetch("/api/tv_launch_chrome", {method:"POST"}).then(r=>r.json());
+  tvShowOutput(res);
+  // Give Chrome a couple seconds to bind its debug port, then re-probe
+  setTimeout(tvRefreshStatus, 2500);
+}
+async function tvPlace(){
+  const n = parseInt($("#tv-n").value || "12", 10);
+  const s = $("#tv-status");
+  s.className = "status idle"; s.textContent = `placing ${n} setups on the chart… this can take up to a minute.`;
+  const res = await fetch("/api/tv_place_setups",
+    {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({n})}
+  ).then(r=>r.json());
+  tvShowOutput(res);
+  s.className = res.ok ? "status ok" : "status no";
+  s.textContent = res.ok
+    ? `Placed ${n} setups. Switch to TradingView, review each, then return here and use the per-setup feedback buttons.`
+    : `Placement failed (exit ${res.returncode}). See output below.`;
+}
+function tvOpen(){ $("#tv-overlay").classList.add("show"); tvRefreshStatus(); }
+function tvClose(){ $("#tv-overlay").classList.remove("show"); $("#tv-output-row").style.display = "none"; }
+document.addEventListener("DOMContentLoaded", () => {
+  $("#tv-launch-btn").onclick = tvOpen;
+  $("#tv-close").onclick = tvClose;
+  $("#tv-launch-chrome").onclick = tvLaunchChrome;
+  $("#tv-place").onclick = tvPlace;
+  $("#tv-overlay").onclick = (e) => { if(e.target === $("#tv-overlay")) tvClose(); };
+});
+
+load();
+</script>
+</body>
+</html>

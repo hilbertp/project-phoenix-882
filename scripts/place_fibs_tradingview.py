@@ -44,7 +44,48 @@ from apps.worker.discovery_bet_1.pivots import detect_local_pivots
 from apps.worker.discovery_bet_1.run_generator import DEFAULT_INPUT_PATH
 from apps.worker.discovery_bet_1.types import PivotKind
 
-CHROME_BINARY = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+def _find_chrome_binary() -> str:
+    """Auto-detect a Chrome binary that works on macOS, Linux (incl. WSL/WSLg),
+    and Windows. Override with the PHOENIX_CHROME_BINARY env var.
+
+    On WSL2 with WSLg (Windows 11), install Chrome inside the Linux distro via
+    `sudo apt install ./google-chrome-stable_current_amd64.deb` -- WSLg will
+    surface its window natively on the Windows desktop, no extra setup needed.
+    """
+    import os as _os
+    override = _os.environ.get("PHOENIX_CHROME_BINARY")
+    if override:
+        return override
+    candidates = [
+        # macOS
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        # Linux (apt-installed; same path inside WSL)
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/google-chrome",
+        "/usr/bin/chromium-browser",
+        "/usr/bin/chromium",
+        "/snap/bin/chromium",
+        # Native Windows (running cpython on Windows directly, not via WSL)
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        # Windows-side Chrome reachable from WSL via /mnt/c (used only when
+        # someone explicitly overrides; the profile dir would live on Windows)
+        "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe",
+        "/mnt/c/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+    ]
+    for p in candidates:
+        if Path(p).exists():
+            return p
+    raise SystemExit(
+        "No Chrome binary found. Set PHOENIX_CHROME_BINARY to the full path, "
+        "or install Chrome:\n"
+        "  macOS:  brew install --cask google-chrome\n"
+        "  Linux/WSL: sudo apt install ./google-chrome-stable_current_amd64.deb\n"
+        "then re-run."
+    )
+
+
+CHROME_BINARY = _find_chrome_binary()
 PROFILE_DIR = REPO_ROOT / ".chrome-tv-manual"
 DEBUG_PORT = 9222
 SYMBOL = "BITGET:BTCUSDT.P"
@@ -194,50 +235,17 @@ CANDIDATE_SWINGS = [
 ]
 
 
-def _clean_legs(candles, atr, pivots, min_bars=MIN_BARS, mult=ATR_MULT):
-    """ATR zigzag: a leg reverses only when price retraces >= ATR*mult from the
-    running extreme, so each leg runs extreme-to-extreme with no breach beyond the
-    ATR tolerance in between (clean major swing). Gated by min-bars span."""
-    n = len(candles)
-    piv: list[tuple[int, float, str]] = []
-    direction = 0  # 1 = up phase, -1 = down phase, 0 = undetermined
-    cur_hi, cur_hi_i = candles[0].high, 0
-    cur_lo, cur_lo_i = candles[0].low, 0
-    for i in range(1, n):
-        c = candles[i]
-        thr = (atr[i] or 0.0) * mult
-        if thr <= 0:
-            if c.high > cur_hi:
-                cur_hi, cur_hi_i = c.high, i
-            if c.low < cur_lo:
-                cur_lo, cur_lo_i = c.low, i
-            continue
-        if direction != -1 and c.high > cur_hi:
-            cur_hi, cur_hi_i = c.high, i
-        if direction != 1 and c.low < cur_lo:
-            cur_lo, cur_lo_i = c.low, i
-        if direction != -1 and (cur_hi - c.low) >= thr:
-            piv.append((cur_hi_i, cur_hi, "high"))
-            direction = -1
-            cur_lo, cur_lo_i = c.low, i
-        elif direction != 1 and (c.high - cur_lo) >= thr:
-            piv.append((cur_lo_i, cur_lo, "low"))
-            direction = 1
-            cur_hi, cur_hi_i = c.high, i
+from apps.worker.discovery_bet_1.swing_detector import clean_legs as _clean_legs_impl
 
-    legs = []
-    for (pi, pp, pk), (ti, tp, tk) in zip(piv, piv[1:]):
-        if (ti - pi) < min_bars:
-            continue
-        legs.append({
-            "direction": "up" if pk == "low" else "down",
-            "size": abs(tp - pp),
-            "parent_idx": pi, "parent_price": pp, "parent_kind": pk,
-            "parent_ts": candles[pi].source_timestamp,
-            "term_idx": ti, "term_price": tp, "term_kind": tk,
-            "term_ts": candles[ti].source_timestamp,
-        })
-    return legs
+
+def _clean_legs(candles, atr, pivots, min_bars=MIN_BARS, mult=ATR_MULT):
+    """Re-export of apps.worker.discovery_bet_1.swing_detector.clean_legs.
+
+    The detector moved to the worker package so the live bot can import it
+    without depending on scripts/. This thin wrapper preserves the historical
+    signature for the many existing callers in scripts/.
+    """
+    return _clean_legs_impl(candles, atr, pivots, min_bars=min_bars, mult=mult)
 
 
 def _request_for(leg) -> TradingViewSyncRequest:

@@ -56,7 +56,7 @@ from apps.worker.discovery_bet_1.human_labels import (
 )
 from apps.worker.discovery_bet_1.pivots import detect_local_pivots
 from apps.worker.discovery_bet_1.run_generator import DEFAULT_INPUT_PATH
-from scripts.execute_fib_strategy import execute
+from scripts.execute_fib_strategy import ENTRY_C, execute
 from scripts.place_fibs_tradingview import (
     LAYOUT_URL,
     MANUAL_SWINGS,
@@ -276,18 +276,17 @@ def _annotate_span_depth(leg, idx_map, atr):
     return leg
 
 
-# Success measured off the Fib level reach: if 0.786 is never tagged it's a
-# miss/shrug (no trade); otherwise the furthest level reached sets win/loss.
+# Success measured off the Fib level reach: if the entry level is never tagged
+# it's a miss/shrug (no trade); else the furthest level reached sets win/loss.
 _OUTCOME_LABEL = {
-    "no_trigger": ("miss / shrug — 0.786 never tagged", "miss"),
+    "no_trigger": (f"miss / shrug — {ENTRY_C} never tagged", "miss"),
     "no_entry": ("miss / shrug — no entry", "miss"),
+    "degenerate": ("miss / shrug — invalid geometry", "miss"),
     "wipeout": ("LOSS — stopped at 1.05", "loss"),
     "tp1_then_scratch": ("scratch — TP1 then break-even", "scratch"),
     "tp2_then_scratch": ("partial — TP2 then break-even", "partial"),
     "tp3_full": ("WIN — full 0.0 target", "win"),
-    "open_no_tp": ("open — entered, no TP yet", "open"),
-    "open_tp1": ("open — past TP1", "open"),
-    "open_tp2": ("open — past TP2", "open"),
+    "open": ("open — trade still live", "open"),
 }
 
 
@@ -425,7 +424,7 @@ def _build_report_html(setups, reviewed):
         rows.append((i + 1, s, verdict, kind, s.get("outcome_r", 0.0)))
 
     # Win rate is scored over REAL setups only (candidates aren't trades you take).
-    # Sample N = TRIGGERED trades (0.786 tagged); a shrug/miss is NOT in N.
+    # Sample N = TRIGGERED trades (entry level tagged); a shrug/miss is NOT in N.
     # win rate = (TP1 + TP2 + TP3) / N ; loss rate = losses / N.
     real = [s for s in setups if not s.get("candidate")]
     rk = Counter(s.get("outcome_kind", "open") for s in real)

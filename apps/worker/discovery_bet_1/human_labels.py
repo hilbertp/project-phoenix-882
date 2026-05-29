@@ -143,25 +143,28 @@ def truth_setups(
     labels: list[LabelRecord] | None = None, path: Path = LABELS_PATH
 ) -> list[dict]:
     """Human-approved setups (accept -> original, adjust -> corrected). Rejects
-    are excluded. This is the ground-truth target for detector calibration."""
+    are excluded. This is the ground-truth target for detector calibration.
+
+    Deduped by the *displayed* anchors: an adjusted setup and a direct accept that
+    resolve to the same parent|terminal are one setup, not two (otherwise that
+    setup is double-counted in the calibration target and in win-rate scoring)."""
     if labels is None:
         labels = load_labels(path)
-    out: list[dict] = []
+    by_anchor: dict[str, dict] = {}
     for label in latest_by_key(labels).values():
         if label.verdict == VERDICT_REJECT:
             continue
         # accept -> stored anchors; adjust/add -> corrected anchors when present
         # (an 'add' marks a missed setup; both accept and add are truth to reproduce).
         if label.corrected:
-            out.append(dict(label.corrected))
+            anchors = dict(label.corrected)
         else:
-            out.append(
-                {
-                    "direction": label.direction,
-                    "parent_ts": label.parent_ts,
-                    "parent_price": label.parent_price,
-                    "term_ts": label.term_ts,
-                    "term_price": label.term_price,
-                }
-            )
-    return out
+            anchors = {
+                "direction": label.direction,
+                "parent_ts": label.parent_ts,
+                "parent_price": label.parent_price,
+                "term_ts": label.term_ts,
+                "term_price": label.term_price,
+            }
+        by_anchor[setup_key(anchors["parent_ts"], anchors["term_ts"])] = anchors
+    return list(by_anchor.values())

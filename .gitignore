@@ -18,3 +18,9 @@ __pycache__/
 !/artifacts/discovery_bet_1/
 !/artifacts/discovery_bet_1/.gitkeep
 .chrome-tv-manual/
+
+# Local agent config (Claude Code) -- user-specific, not shared
+.claude/
+
+# Throwaway / scratch scripts (prefix with _)
+scripts/_*.py
