@@ -161,22 +161,28 @@ git pull origin main                # gets the latest commits from GitHub
 The script auto-detects Chrome via `_find_chrome_binary()`. Override with
 `export PHOENIX_CHROME_BINARY=/path/to/chrome` if needed.
 
-#### Run the workflow (identical commands on macOS and inside WSL)
+#### Run the workflow (canonical console commands — macOS and WSL identical)
+
+The dashboard's "Manual review in TradingView" button works, but spawning
+subprocesses from the HTTP server occasionally races. The console wrappers
+are the reliable path:
 
 ```bash
-# Step 1 (one-time): spawn debug Chrome with the project-local profile,
-# then log into TradingView in the window that pops up.
-# Leave that Chrome running.
-.venv/bin/python scripts/place_fibs_tradingview.py login
+# Step 1 (one-time per session): spawn debug Chrome with the project-local
+# profile and open the TradingView chart. Log in there. Leave Chrome running.
+./scripts/tv-login.sh
 
-# Step 2 (every time you want fresh setups): place the 12 most recent clean
-# setups from the last-3-months window onto BITGET:BTCUSDT.P 1H.
-.venv/bin/python scripts/place_fibs_tradingview.py 12
-
-# Variants
-.venv/bin/python scripts/place_fibs_tradingview.py dry    # print legs, no browser
-.venv/bin/python scripts/place_fibs_tradingview.py 30     # place 30 instead of 12
+# Step 2 (every time you want fresh setups): place N setups on the chart.
+./scripts/tv-place.sh           # default 12
+./scripts/tv-place.sh 24        # 24 setups
+./scripts/tv-place.sh dry       # print legs only, no browser action
 ```
+
+That's it. Both scripts are thin wrappers around `place_fibs_tradingview.py`
+(same Python under the hood) but with PYTHONPATH set, no manual `.venv/bin/python`
+typing, and short memorable names. The dashboard at http://127.0.0.1:8800
+shows the same console snippet inside its TV-review modal — copy-paste from
+either location.
 
 The login session persists in `.chrome-tv-manual/` (project-local, gitignored)
 — each contributor has their own. **Don't copy it between machines.**

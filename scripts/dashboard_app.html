@@ -161,15 +161,31 @@ textarea { width: 100%; background: #1c2230; color: #d1d4dc; border: 1px solid #
     <span class="x" id="tv-close">×</span>
     <h3>Manual review in TradingView</h3>
     <div class="row"><div class="status idle" id="tv-status">checking Chrome…</div></div>
-    <div class="row" id="tv-launch-row" style="display:none">
-      <span>Debug Chrome isn't running.</span>
-      <button class="btn" id="tv-launch-chrome">Launch Chrome for TV login</button>
+    <div class="row" style="color:#9aa4b2;font-size:12.5px;line-height:1.55">
+      <strong style="color:#f0d36a">Recommended: run from your terminal.</strong>
+      The in-modal buttons below sometimes lag when the dashboard backend
+      spawns subprocesses; the console commands are direct and always work.
     </div>
+    <div class="row"><pre style="background:#0e1117;border:1px solid #232a39;border-radius:6px;padding:10px 12px;font-size:12px;color:#d1d4dc;white-space:pre-wrap;margin:0;width:100%">
+# 1. open Chrome + log into TradingView (once)
+./scripts/tv-login.sh
+
+# 2. place N setups on the chart (default 12)
+./scripts/tv-place.sh        # 12 setups
+./scripts/tv-place.sh 24     # 24 setups
+./scripts/tv-place.sh dry    # print legs only, no browser
+</pre></div>
     <div class="row" id="tv-login-hint" style="display:none;color:#f0d36a;font-size:12px;border:1px solid #7a6a1f;background:#221f12;padding:8px 10px;border-radius:6px">
       <strong>Log in to TradingView in the Chrome window that opened.</strong>
       Anonymous sessions get rate-limited mid-placement and your custom fib-tool
-      styling (colors, level visibility, default fonts) only loads for a logged-in
-      account. Use Email login — Google SSO can stall in a fresh profile.
+      styling only loads for a logged-in account. Use Email login.
+    </div>
+    <div class="row" style="color:#6b7785;font-size:11px;margin-top:8px">
+      <em>Legacy buttons (kept for convenience, but use the console commands if anything stalls):</em>
+    </div>
+    <div class="row" id="tv-launch-row" style="display:none">
+      <span>Debug Chrome isn't running.</span>
+      <button class="btn" id="tv-launch-chrome">Launch Chrome for TV login</button>
     </div>
     <div class="row" id="tv-place-row" style="display:none">
       <label>Place
@@ -181,8 +197,8 @@ textarea { width: 100%; background: #1c2230; color: #d1d4dc; border: 1px solid #
       <pre id="tv-output"></pre>
     </div>
     <div class="row" style="color:#6b7785;font-size:12px;">
-      After placement, close this modal and review each setup on the chart.
-      Use the per-setup feedback buttons below to record verdicts.
+      After placement, return to the dashboard and use WASD or the per-setup
+      feedback buttons below to record verdicts.
     </div>
   </div>
 </div>
