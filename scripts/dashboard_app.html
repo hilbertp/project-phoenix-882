@@ -153,6 +153,12 @@ textarea { width: 100%; background: #1c2230; color: #d1d4dc; border: 1px solid #
       <span>Debug Chrome isn't running.</span>
       <button class="btn" id="tv-launch-chrome">Launch Chrome for TV login</button>
     </div>
+    <div class="row" id="tv-login-hint" style="display:none;color:#f0d36a;font-size:12px;border:1px solid #7a6a1f;background:#221f12;padding:8px 10px;border-radius:6px">
+      <strong>Log in to TradingView in the Chrome window that opened.</strong>
+      Anonymous sessions get rate-limited mid-placement and your custom fib-tool
+      styling (colors, level visibility, default fonts) only loads for a logged-in
+      account. Use Email login — Google SSO can stall in a fresh profile.
+    </div>
     <div class="row" id="tv-place-row" style="display:none">
       <label>Place
         <input type="number" id="tv-n" value="12" min="1" max="50">
@@ -485,19 +491,22 @@ addEventListener("resize",()=>{ if(state){ renderEquity(); if(sel){ const s=setu
 
 // ---------- TradingView review launcher ----------
 async function tvRefreshStatus(){
-  const s = $("#tv-status"), launchRow = $("#tv-launch-row"), placeRow = $("#tv-place-row");
+  const s = $("#tv-status"), launchRow = $("#tv-launch-row"),
+        placeRow = $("#tv-place-row"), loginHint = $("#tv-login-hint");
   s.className = "status idle"; s.textContent = "checking Chrome…";
   try{
     const r = await fetch("/api/tv_status").then(r=>r.json());
     if(r.chrome_alive){
       s.className = "status ok";
-      s.textContent = "Chrome debug session is up (port 9222). Ready to place setups.";
+      s.textContent = "Chrome debug session is up (port 9222). Log into TradingView in that window before placing -- anonymous sessions get rate-limited and lose your custom fib styling.";
       launchRow.style.display = "none";
+      loginHint.style.display = "flex";
       placeRow.style.display = "flex";
     } else {
       s.className = "status no";
       s.textContent = "Chrome debug session is NOT running. Start it first, log into TradingView, then come back.";
       launchRow.style.display = "flex";
+      loginHint.style.display = "none";
       placeRow.style.display = "none";
     }
   } catch(e){
