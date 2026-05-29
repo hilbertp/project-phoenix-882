@@ -78,10 +78,14 @@ canvas { display: block; width: 100%; border-radius: 8px; }
 .btn.no { border-color: #7a2f31; color: #ff9a9c; } .btn.no:hover { background: #241516; }
 .btn.adj { border-color: #7a6a1f; color: #f0d36a; } .btn.adj:hover { background: #221f12; }
 .btn.on { background: #2962ff; color: #fff; border-color: #2962ff; }
-.kbd-hint { color: #6b7785; font-size: 11px; }
-kbd { display: inline-block; padding: 1px 5px; margin: 0 1px; border-radius: 3px;
-  background: #1c2230; color: #d1d4dc; border: 1px solid #2a3142;
-  font-family: ui-monospace, monospace; font-size: 10px; line-height: 1; }
+.kbd-hint { color: #c7ccd6; font-size: 12.5px; padding: 4px 10px;
+  background: #161b26; border: 1px solid #2a3142; border-radius: 8px; }
+.kbd-hint b { color: #f0b90b; font-weight: 700; margin-right: 6px;
+  letter-spacing: 0.04em; }
+kbd { display: inline-block; padding: 2px 7px; margin: 0 2px; border-radius: 4px;
+  background: #1c2230; color: #f0b90b; border: 1px solid #3a4a6a;
+  font-family: ui-monospace, monospace; font-size: 11.5px; line-height: 1;
+  font-weight: 700; }
 /* TV launcher modal */
 .tv-overlay { position: fixed; inset: 0; background: rgba(8,10,14,0.72); display: none;
   align-items: center; justify-content: center; z-index: 100; }
@@ -142,6 +146,7 @@ textarea { width: 100%; background: #1c2230; color: #d1d4dc; border: 1px solid #
     <span class="muted" id="count"></span>
     <span style="flex:1"></span>
     <span class="kbd-hint">
+      <b>SHORTCUTS</b>
       <kbd>W</kbd>/<kbd>↑</kbd> approve &middot;
       <kbd>S</kbd>/<kbd>↓</kbd> reject &middot;
       <kbd>A</kbd>/<kbd>←</kbd> prev &middot;
