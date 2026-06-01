@@ -300,6 +300,120 @@ def navigate_to_fib(driver, leg):
         return {"ok": False, "error": str(exc)}
 
 
+_ADA_OUTCOME_STYLE = {
+    # kind -> (label, color, emoji)
+    "miss":    ("MISS / SHRUG", "#9aa4b2", "○"),
+    "loss":    ("LOSS", "#ef5350", "✗"),
+    "scratch": ("SCRATCH", "#f0b90b", "≈"),
+    "partial": ("PARTIAL WIN", "#f0a020", "◐"),
+    "win":     ("FULL WIN", "#26a69a", "✓"),
+    "open":    ("OPEN", "#2962ff", "↻"),
+}
+
+_ADA_VERDICT_BADGE = {
+    "accept":  ("✓ ACCEPTED",       "#26a69a"),
+    "adjust":  ("✎ SETUP WRONG",    "#f0b90b"),
+    "reject":  ("✗ OUTCOME WRONG",  "#ef5350"),
+    "add":     ("+ ADDED",          "#8957e5"),
+}
+
+
+def _ada_info_html(i: int, n: int, leg: dict, extra: str = "", verdict: str | None = None) -> str:
+    """ADA-specific info renderer: BIG outcome + R, neutral gate line.
+
+    Layout (top to bottom):
+      [verdict badge if any]
+      [BIG OUTCOME + R, color-coded]
+      direction (green/red arrow)
+      parent_ts → term_ts
+      N candles · X.X× ATR deep
+      gate-check line in plain gray (no color)
+    """
+    parts = []
+
+    # Verdict badge (if reviewed)
+    if verdict:
+        txt, col = _ADA_VERDICT_BADGE.get(verdict, (verdict.upper(), "#9aa4b2"))
+        parts.append(
+            f"<div style='font-weight:bold;font-size:13px;color:{col};"
+            f"margin-bottom:8px'>{txt}</div>"
+        )
+    else:
+        parts.append(
+            "<div style='color:#6b7785;font-size:11px;margin-bottom:8px'>"
+            "&bull; not reviewed yet</div>"
+        )
+
+    # BIG outcome line
+    kind = leg.get("outcome_kind") or "open"
+    olabel, ocol, oemoji = _ADA_OUTCOME_STYLE.get(kind, ("?", "#9aa4b2", "?"))
+    r_val = leg.get("outcome_r", 0.0)
+    parts.append(
+        f"<div style='font-weight:bold;font-size:17px;color:{ocol};"
+        f"line-height:1.2;margin-bottom:2px'>"
+        f"{oemoji} {olabel}</div>"
+    )
+    # BIG R-multiple, signed-colored
+    r_col = "#26a69a" if r_val > 0.05 else ("#ef5350" if r_val < -0.05 else "#9aa4b2")
+    parts.append(
+        f"<div style='font-weight:bold;font-size:20px;color:{r_col};"
+        f"line-height:1.1;margin-bottom:10px;font-variant-numeric:tabular-nums'>"
+        f"{r_val:+.2f}R</div>"
+    )
+
+    # Direction + setup index
+    direction = leg["direction"]
+    dir_col = "#26a69a" if direction == "up" else "#ef5350"
+    dir_arrow = "▲" if direction == "up" else "▼"
+    parts.append(
+        f"<div style='font-size:12px;color:#cdd9e5;margin-bottom:4px'>"
+        f"<b style='color:{dir_col}'>{dir_arrow} {direction.upper()}</b>"
+        f" &nbsp; <span style='color:#6b7785'>setup {i + 1} / {n}</span>"
+        f"</div>"
+    )
+
+    # Timestamps
+    parts.append(
+        f"<div style='font-size:11px;color:#9aa4b2;font-family:ui-monospace,monospace;"
+        f"margin-bottom:4px'>"
+        f"{leg['parent_ts'][5:16]} &rarr; {leg['term_ts'][5:16]}"
+        f"</div>"
+    )
+
+    # Span + depth (the detector's quality gauges)
+    span = leg.get("span", "?")
+    depth = leg.get("depth", 0.0)
+    parts.append(
+        f"<div style='font-size:11px;color:#cdd9e5;margin-bottom:2px'>"
+        f"<b>{span} candles</b> &middot; <b>{depth:.1f}&times; ATR</b> deep"
+        f"</div>"
+    )
+
+    # Gate-clear line: NEUTRAL GRAY (no color coding per user request)
+    if span != "?":
+        min_bars = 6
+        min_atr = 2.0
+        span_ok = (isinstance(span, int) and span >= min_bars)
+        depth_ok = (depth >= min_atr)
+        if span_ok and depth_ok:
+            gate_text = f"clears gates (&ge;{min_bars}c, &ge;{int(min_atr)}&times; ATR)"
+        else:
+            why = []
+            if not span_ok:
+                why.append(f"{span}c &lt; {min_bars}")
+            if not depth_ok:
+                why.append(f"{depth:.1f} &lt; {int(min_atr)}&times; ATR")
+            gate_text = f"below gate: {' &amp; '.join(why)}"
+        parts.append(
+            f"<div style='font-size:10px;color:#9aa4b2;margin-bottom:2px'>{gate_text}</div>"
+        )
+
+    if extra:
+        parts.append(f"<div style='font-size:11px;color:#6b7785;margin-top:6px'>{extra}</div>")
+
+    return "".join(parts)
+
+
 def cohort_for(depth_atr: float) -> str:
     if depth_atr < 6: return "4-6"
     if depth_atr < 8: return "6-8"
@@ -475,12 +589,13 @@ def main():
         nav = navigate_to_fib(driver, leg)
         if not (isinstance(nav, dict) and nav.get("ok")):
             print(f"  navigate warning: {nav}", file=sys.stderr)
-        # Update the floating panel's status text
+        # Update the floating panel's status text via the ADA-specific renderer
+        # (BIG color-coded outcome + R, neutral gate-clear line).
         driver.execute_script(
             "window.__reviewStatus(arguments[0], arguments[1]);",
             f"ADA 15m Review  {i + 1}/{len(setups)}",
-            _info_html(i, len(setups), leg, extra,
-                       verdict=verdicts.get(i)),
+            _ada_info_html(i, len(setups), leg, extra,
+                           verdict=verdicts.get(i)),
         )
 
     i = 0
