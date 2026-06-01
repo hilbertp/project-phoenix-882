@@ -58,6 +58,8 @@ from scripts.review_fibs_tradingview import (
     INJECT_PANEL_JS,
     NAVIGATE_TO_FIB_JS,
     REAPPLY_NAMES_JS,
+    _annotate_outcome,
+    _annotate_span_depth,
     _info_html,
 )
 from apps.api.db1_review_tradingview.service import (
@@ -184,28 +186,6 @@ def navigate_to_fib(driver, leg):
         return {"ok": False, "error": str(exc)}
 
 
-def annotate_outcome(leg, candles, idx_map):
-    """Add the 0.941 entry outcome + R to the leg dict (drives the panel info)."""
-    try:
-        res = execute(candles, idx_map, leg)
-        kind = KIND.get(res["status"], "open")
-        leg["outcome_kind"] = kind
-        leg["outcome_r"] = res["r"]
-    except Exception:
-        leg["outcome_kind"] = "open"
-        leg["outcome_r"] = 0.0
-
-
-def annotate_span_depth(leg, idx_map, atr):
-    ti = idx_map.get(leg["term_ts"])
-    pi = idx_map.get(leg["parent_ts"])
-    if ti is None or pi is None:
-        return
-    leg["span_candles"] = abs(ti - pi)
-    a = atr[ti] or 1.0
-    leg["depth_atr"] = abs(leg["term_price"] - leg["parent_price"]) / a
-
-
 def cohort_for(depth_atr: float) -> str:
     if depth_atr < 6: return "4-6"
     if depth_atr < 8: return "6-8"
@@ -222,7 +202,7 @@ def write_session_report(setups, verdicts, started_at, ended_at, out_path):
     verdict_counts = Counter(verdicts.values())
     by_cohort = {}
     for k, leg in enumerate(setups):
-        c = cohort_for(leg.get("depth_atr", 0))
+        c = cohort_for(leg.get("depth", 0))
         by_cohort.setdefault(c, {"reviewed": 0, "accept": 0, "reject": 0, "skip": 0})
         if k in verdicts:
             by_cohort[c]["reviewed"] += 1
@@ -310,8 +290,8 @@ def main():
     print(f"==> {len(legs)} clean legs in window")
 
     for leg in legs:
-        annotate_span_depth(leg, idx_map, atr)
-        annotate_outcome(leg, candles, idx_map)
+        _annotate_span_depth(leg, idx_map, atr)
+        _annotate_outcome(leg, candles, idx_map)
 
     # Attach to running Chrome + navigate to ADA chart.
     print("==> attaching to Chrome on :9222...", flush=True)
