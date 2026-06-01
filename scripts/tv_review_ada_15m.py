@@ -682,16 +682,48 @@ def main():
     verdicts = {}      # setup_index -> verdict string
     started_at = datetime.now(timezone.utc)
 
+    # Robust per-fib removal: removeAllDrawingTools() is async on TV's
+    # renderer and a 50ms sleep wasn't enough -- the OLD fib was still in
+    # the model when place_one added the new one, leaving both visible
+    # (user: 'still loading n and n+1 at the same time'). Iterate and call
+    # removeSource() on each LineTool, then poll until allLineTools() goes
+    # to zero. Synchronous, race-free.
+    REMOVE_ALL_LINETOOLS_JS = (
+        "const c=window._exposed_chartWidgetCollection;"
+        "if(!c) return -1;"
+        "const m=c._activeChartWidgetModel.value().model();"
+        "const tools=m.allLineTools().slice();"
+        "for(const t of tools){ try{ m.removeSource(t); }catch(e){} }"
+        "return m.allLineTools().length;"
+    )
+    COUNT_LINETOOLS_JS = (
+        "const c=window._exposed_chartWidgetCollection;"
+        "if(!c) return -1;"
+        "return c._activeChartWidgetModel.value().model().allLineTools().length;"
+    )
+
+    def _clear_and_wait(max_ms=1000):
+        driver.execute_script(REMOVE_ALL_LINETOOLS_JS)
+        # Poll until really zero (up to max_ms). Belt and suspenders.
+        deadline = time.time() + max_ms / 1000
+        while time.time() < deadline:
+            n = driver.execute_script(COUNT_LINETOOLS_JS) or 0
+            if n <= 0:
+                return True
+            driver.execute_script(REMOVE_ALL_LINETOOLS_JS)
+            time.sleep(0.04)
+        return False
+
     def show(i, extra=""):
         leg = setups[i]
-        # Single fib at a time. Clear THEN small pause so TV's renderer
-        # actually flushes the removed drawing before we add a new one --
-        # without the pause, fast successive show() calls can leave the
-        # old fib briefly visible (the 'shows multiple sometime' bug).
-        driver.execute_script(CLEAR_JS)
-        time.sleep(0.05)
+        # 1) Clear-and-wait until the chart truly has zero LineTools.
+        if not _clear_and_wait(max_ms=1000):
+            n_left = driver.execute_script(COUNT_LINETOOLS_JS) or 0
+            print(f"  warn: chart still has {n_left} drawings after clear", file=sys.stderr)
+        # 2) Place the new fib.
         place_one(driver, leg, f"auto{i+1} << REVIEWING >> {i+1}/{len(setups)}", ctx)
-        time.sleep(0.25)
+        # 3) Re-apply the name (TV's template blanks editableText after create).
+        time.sleep(0.2)
         driver.execute_script(REAPPLY_NAMES_JS)
         nav = navigate_to_fib(driver, leg)
         if not (isinstance(nav, dict) and nav.get("ok")):
