@@ -82,100 +82,99 @@ _rf.DETECTOR_PARAMS["atr_mult"] = 2.0
 #   D / Right = next setup
 #   Enter     = Done (end session, write report)
 ADA_INJECT_PANEL_JS = r"""
-(function(){
-  if (window.__reviewKeyHandler) {
-    document.removeEventListener('keydown', window.__reviewKeyHandler, true);
+if (window.__reviewKeyHandler) {
+  document.removeEventListener('keydown', window.__reviewKeyHandler, true);
+}
+var __oldPanel = document.getElementById('db1rv-panel');
+if (__oldPanel) { __oldPanel.remove(); }
+window.__reviewSeq = 0;
+window.__reviewAction = null;
+var p = document.createElement('div');
+p.id = 'db1rv-panel';
+// Position on the LEFT side (past the ~60px drawing-tools toolbar) so the
+// panel never hides behind TV's right-side Object Tree / Data Window pane.
+p.style.cssText = 'position:fixed;top:90px;left:80px;z-index:2147483647;background:#1e222d;color:#fff;padding:10px;border-radius:8px;font:12px -apple-system,sans-serif;box-shadow:0 2px 14px rgba(0,0,0,.6);width:320px';
+function b(label, act, bg, title){
+  return '<button data-act="'+act+'" title="'+(title||'')+'" '+
+    'style="margin:2px;padding:7px 10px;border:0;border-radius:4px;cursor:pointer;background:'+bg+';color:#fff;font-size:12px">'+label+'</button>';
+}
+p.innerHTML =
+  '<div id="db1rv-title" style="font-weight:bold;margin-bottom:8px">ADA 15m Review</div>' +
+  '<div id="db1rv-main">' +
+    '<div>' + b('◀ Back (A)','back','#363a45','Previous setup') +
+              b('Next (D) ▶','next','#2962ff','Next setup') + '</div>' +
+    '<div>' + b('✓ all ok (W)','accept','#26a69a','Setup AND outcome look right') +
+              b('✗ something wrong (S)','wrong','#ef5350','Either setup or outcome is wrong (then press R or F)') + '</div>' +
+    '<div>' + b('Done — end session (Enter)','done','#363a45',
+                  'End the review. Session report is written to artifacts/discovery_bet_1/manual_review_ada_15m/') + '</div>' +
+  '</div>' +
+  '<div id="db1rv-wrong" style="display:none;border:1px solid #f0b90b;border-radius:6px;padding:8px;margin-top:6px">' +
+    '<div style="margin-bottom:6px;font-weight:bold;color:#f0b90b">Whats wrong?</div>' +
+    '<div>' + b('Setup wrong (R)','wrong_setup','#7a6a1f',
+                  'Anchors do not match a real swing (VERDICT_ADJUST)') +
+              b('Outcome wrong (F)','wrong_outcome','#7a2f31',
+                  'Anchors fine but executor scored the wrong outcome (VERDICT_REJECT)') + '</div>' +
+    '<div style="margin-top:5px;font-size:10px;color:#9aa4b2">Esc to cancel</div>' +
+  '</div>' +
+  '<div style="font-size:10px;color:#6b7785;margin-top:8px;line-height:1.5">' +
+    'keys: <b>W</b>=all ok &middot; <b>S</b>=wrong (then <b>R</b>=setup / <b>F</b>=outcome) &middot; ' +
+    '<b>A</b>/<b>D</b>=prev/next &middot; <b>Enter</b>=done' +
+  '</div>' +
+  '<div id="db1rv-info" style="margin-top:7px;font-size:11px;color:#9aa4b2;line-height:1.4"></div>';
+document.body.appendChild(p);
+function __setWrongMode(on){
+  document.getElementById('db1rv-main').style.display = on ? 'none' : 'block';
+  document.getElementById('db1rv-wrong').style.display = on ? 'block' : 'none';
+}
+function __emit(act){
+  __setWrongMode(false);
+  window.__reviewSeq = (window.__reviewSeq || 0) + 1;
+  window.__reviewAction = {seq: window.__reviewSeq, action: act};
+}
+function __handle(act){
+  if (act === 'wrong')  { __setWrongMode(true); return; }
+  if (act === 'cancel') { __setWrongMode(false); return; }
+  __emit(act);
+}
+p.querySelectorAll('button').forEach(function(btn){
+  btn.onclick = function(){ __handle(btn.getAttribute('data-act')); };
+});
+window.__reviewStatus = function(title, info){
+  var t = document.getElementById('db1rv-title');
+  if (t) t.textContent = title;
+  var i = document.getElementById('db1rv-info');
+  if (i && info != null) i.innerHTML = info;
+};
+window.__reviewKeyHandler = function(e){
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) return;
+  var wrong = document.getElementById('db1rv-wrong').style.display === 'block';
+  var k = (e.key || '').toLowerCase();
+  var act = null;
+  if (wrong) {
+    if (k === 'r')        act = 'wrong_setup';
+    else if (k === 'f')   act = 'wrong_outcome';
+    else if (k === 'escape') { __setWrongMode(false); e.preventDefault(); e.stopPropagation(); return; }
+    else if (k === 'a' || k === 'arrowleft')  { __setWrongMode(false); act = 'back'; }
+    else if (k === 'd' || k === 'arrowright') { __setWrongMode(false); act = 'next'; }
+    else if (k === 'enter') { __setWrongMode(false); act = 'done'; }
+  } else {
+    var m = {
+      w:'accept', arrowup:'accept',
+      s:'wrong',  arrowdown:'wrong',
+      a:'back',   arrowleft:'back',
+      d:'next',   arrowright:'next',
+      enter:'done'
+    };
+    act = m[k];
   }
-  const existing = document.getElementById('db1rv-panel');
-  if (existing) existing.remove();
-  const p = document.createElement('div');
-  p.id = 'db1rv-panel';
-  // Position on the LEFT side (past the ~60px drawing-tools toolbar) so the
-  // panel never hides behind TV's right-side Object Tree / Data Window pane.
-  p.style.cssText = 'position:fixed;top:90px;left:80px;z-index:2147483647;background:#1e222d;color:#fff;padding:10px;border-radius:8px;font:12px -apple-system,sans-serif;box-shadow:0 2px 14px rgba(0,0,0,.6);width:320px';
-  function btn(label, act, bg, title){
-    return '<button data-act="'+act+'" title="'+(title||'')+'" '+
-      'style="margin:2px;padding:7px 10px;border:0;border-radius:4px;cursor:pointer;background:'+bg+';color:#fff;font-size:12px">'+label+'</button>';
+  if (act) {
+    __handle(act);
+    e.preventDefault();
+    e.stopPropagation();
   }
-  p.innerHTML =
-    '<div id="db1rv-title" style="font-weight:bold;margin-bottom:8px">ADA 15m Review</div>' +
-    '<div id="db1rv-main">' +
-      '<div>' + btn('◀ Back (A)','back','#363a45','Previous setup') +
-                btn('Next (D) ▶','next','#2962ff','Next setup') + '</div>' +
-      '<div>' + btn('✓ all ok (W)','accept','#26a69a','Setup AND outcome look right') +
-                btn('✗ something wrong (S)','wrong','#ef5350','Either setup or outcome is wrong (then press R or F)') + '</div>' +
-      '<div>' + btn('Done — end session (Enter)','done','#363a45',
-                    'End the review. Session report is written to artifacts/discovery_bet_1/manual_review_ada_15m/SESSION_<ts>.md') + '</div>' +
-    '</div>' +
-    '<div id="db1rv-wrong" style="display:none;border:1px solid #f0b90b;border-radius:6px;padding:8px;margin-top:6px">' +
-      '<div style="margin-bottom:6px;font-weight:bold;color:#f0b90b">What\'s wrong?</div>' +
-      '<div>' + btn('Setup wrong (R)','wrong_setup','#7a6a1f',
-                    'Anchors do not match a real swing (VERDICT_ADJUST)') +
-                btn('Outcome wrong (F)','wrong_outcome','#7a2f31',
-                    'Anchors fine but executor scored the wrong outcome (VERDICT_REJECT)') + '</div>' +
-      '<div style="margin-top:5px;font-size:10px;color:#9aa4b2">Esc to cancel</div>' +
-    '</div>' +
-    '<div style="font-size:10px;color:#6b7785;margin-top:8px;line-height:1.5">' +
-      'keys: <b>W</b>=all ok &middot; <b>S</b>=wrong (then <b>R</b>=setup / <b>F</b>=outcome) &middot; ' +
-      '<b>A</b>/<b>D</b>=prev/next &middot; <b>Enter</b>=done' +
-    '</div>' +
-    '<div id="db1rv-info" style="margin-top:7px;font-size:11px;color:#9aa4b2;line-height:1.4"></div>';
-  document.body.appendChild(p);
-
-  function setWrongMode(on){
-    document.getElementById('db1rv-main').style.display = on ? 'none' : 'block';
-    document.getElementById('db1rv-wrong').style.display = on ? 'block' : 'none';
-  }
-  function emit(act){
-    setWrongMode(false);
-    window.__reviewSeq = (window.__reviewSeq || 0) + 1;
-    window.__reviewAction = {seq: window.__reviewSeq, action: act};
-  }
-  function handle(act){
-    if (act === 'wrong')      { setWrongMode(true); return; }
-    if (act === 'cancel')     { setWrongMode(false); return; }
-    emit(act);
-  }
-  p.querySelectorAll('button').forEach(function(b){
-    b.onclick = function(){ handle(b.getAttribute('data-act')); };
-  });
-  window.__reviewStatus = function(title, info){
-    const t = document.getElementById('db1rv-title');
-    if (t) t.textContent = title;
-    const i = document.getElementById('db1rv-info');
-    if (i && info != null) i.innerHTML = info;
-  };
-  window.__reviewKeyHandler = function(e){
-    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) return;
-    const wrong = document.getElementById('db1rv-wrong').style.display === 'block';
-    const k = (e.key || '').toLowerCase();
-    let act = null;
-    if (wrong) {
-      if (k === 'r')       act = 'wrong_setup';
-      else if (k === 'f')  act = 'wrong_outcome';
-      else if (k === 'escape') { setWrongMode(false); e.preventDefault(); e.stopPropagation(); return; }
-      else if (k === 'a' || k === 'arrowleft')  { setWrongMode(false); act = 'back'; }
-      else if (k === 'd' || k === 'arrowright') { setWrongMode(false); act = 'next'; }
-      else if (k === 'enter') { setWrongMode(false); act = 'done'; }
-    } else {
-      const m = {
-        w:'accept', arrowup:'accept',
-        s:'wrong',  arrowdown:'wrong',
-        a:'back',   arrowleft:'back',
-        d:'next',   arrowright:'next',
-        enter:'done',
-      };
-      act = m[k];
-    }
-    if (act) {
-      handle(act);
-      e.preventDefault();
-      e.stopPropagation();
-    }
-  };
-  document.addEventListener('keydown', window.__reviewKeyHandler, true);
-  return {ok:true};
-})();
+};
+document.addEventListener('keydown', window.__reviewKeyHandler, true);
+return {ok:true, panel_created: !!document.getElementById('db1rv-panel')};
 """
 from apps.api.db1_review_tradingview.service import (
     DB1TradingViewSyncService,
@@ -458,7 +457,8 @@ def main():
     svc = DB1TradingViewSyncService()
     ctx = svc._detect_chart_time_context(driver)
     driver.execute_script(REMOVE_VOLUME_JS)
-    driver.execute_script(ADA_INJECT_PANEL_JS)
+    inject_result = driver.execute_script(ADA_INJECT_PANEL_JS)
+    print(f"  panel inject returned: {inject_result}", flush=True)
     driver.execute_script("window.__reviewSeq = 0; window.__reviewAction = null;")
     driver.execute_cdp_cmd("Page.bringToFront", {})
 
