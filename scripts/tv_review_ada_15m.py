@@ -445,13 +445,13 @@ def write_session_report(setups, verdicts, started_at, ended_at, out_path):
     for k, leg in enumerate(setups):
         c = cohort_for(leg.get("depth", 0))
         by_cohort.setdefault(c, {"reviewed": 0, "accept": 0,
-                                  "adjust": 0, "reject": 0, "skip": 0})
+                                  "setup_wrong": 0, "outcome_wrong": 0, "skip": 0})
         if k in verdicts:
             by_cohort[c]["reviewed"] += 1
             v = verdicts[k]
-            if v == VERDICT_ACCEPT: by_cohort[c]["accept"] += 1
-            elif v == VERDICT_ADJUST: by_cohort[c]["adjust"] += 1
-            elif v == VERDICT_REJECT: by_cohort[c]["reject"] += 1
+            if v == VERDICT_ACCEPT:        by_cohort[c]["accept"] += 1
+            elif v == "setup_wrong":       by_cohort[c]["setup_wrong"] += 1
+            elif str(v).startswith("outcome_wrong"): by_cohort[c]["outcome_wrong"] += 1
         else:
             by_cohort[c]["skip"] += 1
     # R-rollup over what the user APPROVED (those are the trades the user
@@ -480,10 +480,10 @@ def write_session_report(setups, verdicts, started_at, ended_at, out_path):
         f"",
         f"| Verdict | Count | Meaning |",
         f"|---|---|---|",
-        f"| accept (W)               | {verdict_counts.get(VERDICT_ACCEPT, 0)} | all ok |",
-        f"| adjust (S → R)           | {verdict_counts.get(VERDICT_ADJUST, 0)} | setup wrong (anchors) |",
-        f"| reject (S → F)           | {verdict_counts.get(VERDICT_REJECT, 0)} | outcome wrong (scoring) |",
-        f"| (skipped — no verdict)   | {len(setups) - n} | not reviewed |",
+        f"| accept (W)             | {verdict_counts.get(VERDICT_ACCEPT, 0)} | all ok |",
+        f"| setup wrong (S → R)    | {sum(1 for v in verdicts.values() if v == 'setup_wrong')} | not a real swing |",
+        f"| outcome wrong (S → F)  | {sum(1 for v in verdicts.values() if str(v).startswith('outcome_wrong'))} | executor scored wrong |",
+        f"| (skipped — no verdict) | {len(setups) - n} | not reviewed |",
         f"",
         f"## Per-cohort breakdown",
         f"",
@@ -492,7 +492,7 @@ def write_session_report(setups, verdicts, started_at, ended_at, out_path):
     ]
     for cohort, c in sorted(by_cohort.items()):
         total = c["reviewed"] + c["skip"]
-        lines.append(f"| {cohort} | {total} | {c['reviewed']} | {c['accept']} | {c['adjust']} | {c['reject']} |")
+        lines.append(f"| {cohort} | {total} | {c['reviewed']} | {c['accept']} | {c['setup_wrong']} | {c['outcome_wrong']} |")
     lines += [
         f"",
         f"## 0.941 entry R, accepted setups only",
@@ -665,12 +665,20 @@ def main():
                          "expected_loss", "expected_miss"):
                 leg = setups[i]
                 expected_outcome = None
+                wrong_kind = None
                 if act == "accept":
                     verdict = VERDICT_ACCEPT          # W: all ok
                 elif act == "wrong_setup":
-                    verdict = VERDICT_ADJUST          # S then R: anchors wrong
+                    # S then R: 'this isn't a real swing setup at all.'
+                    # NOT VERDICT_ADJUST -- ADJUST requires corrected anchors
+                    # (the user dragged the fib to a new place). R alone is
+                    # just 'reject this setup', so VERDICT_REJECT is right.
+                    verdict = VERDICT_REJECT
+                    wrong_kind = "setup"
                 else:                                  # S then F then 1/2/3/L/M
-                    verdict = VERDICT_REJECT          # outcome scoring wrong
+                    # Setup is fine but executor scored the wrong outcome.
+                    verdict = VERDICT_REJECT
+                    wrong_kind = "outcome"
                     expected_outcome = {
                         "expected_tp1":  "TP1",
                         "expected_tp2":  "TP2",
@@ -687,6 +695,8 @@ def main():
                     "scored_outcome": leg.get("outcome_kind"),
                     "scored_R": leg.get("outcome_r"),
                 }
+                if wrong_kind is not None:
+                    detector_params["wrong_kind"] = wrong_kind
                 if expected_outcome is not None:
                     detector_params["expected_outcome"] = expected_outcome
                 label = make_label({
@@ -696,7 +706,15 @@ def main():
                     "term_price": float(leg["term_price"]),
                 }, verdict, detector_params=detector_params)
                 append_label(label, path=LABELS_PATH)
-                verdicts[i] = verdict
+                # Track a richer verdict tag for the session report so R vs F
+                # are distinguishable (both write VERDICT_REJECT to the labels
+                # file, differentiated only by detector_params.wrong_kind).
+                if wrong_kind == "setup":
+                    verdicts[i] = "setup_wrong"
+                elif wrong_kind == "outcome":
+                    verdicts[i] = f"outcome_wrong:{expected_outcome}"
+                else:
+                    verdicts[i] = verdict
                 # Auto-advance to next on a verdict, then drop any stale presses
                 # the user made WHILE show()'s ~1s render was running. Without
                 # this drain, a queued press fires immediately for the new setup
