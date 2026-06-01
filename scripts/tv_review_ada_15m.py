@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -536,6 +537,24 @@ def main():
     for leg in legs:
         _annotate_span_depth(leg, idx_map, atr)
         _annotate_outcome(leg, candles, idx_map)
+
+    # Filter out 'miss' outcomes: setups where the 0.941 entry never tagged
+    # (the trade never triggered, nothing to review). Set
+    # PHOENIX_REVIEW_INCLUDE_MISSES=1 to keep them in the review set.
+    include_misses = os.environ.get("PHOENIX_REVIEW_INCLUDE_MISSES") in ("1", "true", "yes")
+    if not include_misses:
+        triggered = [l for l in legs if l.get("outcome_kind") != "miss"]
+        n_missed = len(legs) - len(triggered)
+        print(f"==> filtered out {n_missed} miss / shrug setups (0.941 never tagged). "
+              f"{len(triggered)} triggered setups remain.")
+        print(f"    set PHOENIX_REVIEW_INCLUDE_MISSES=1 to keep them.")
+        legs = triggered
+    else:
+        print(f"==> keeping all {len(legs)} setups (PHOENIX_REVIEW_INCLUDE_MISSES set)")
+
+    if not legs:
+        raise SystemExit("no triggered setups in window. Try a longer cutoff window "
+                         "or set PHOENIX_REVIEW_INCLUDE_MISSES=1 to include misses.")
 
     # Attach to running Chrome + navigate to ADA chart.
     print("==> attaching to Chrome on :9222...", flush=True)
