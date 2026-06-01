@@ -802,8 +802,23 @@ def _parse_optional_text(payload: dict[str, object], key: str) -> str | None:
 
 
 def _chart_interval_for_timeframe(timeframe: str) -> str:
-    if timeframe == "1H":
-        return "60"
+    # TV's internal chart-interval string. Minutes are unprefixed ("15"),
+    # hours are minute-multiples ("60"=1H, "240"=4H), days/weeks have their
+    # own format ("1D", "1W"). Extended beyond 1H to support 15m/5m/1m flows.
+    mapping = {
+        "1M":  "1",  "1m":  "1",
+        "3M":  "3",  "3m":  "3",
+        "5M":  "5",  "5m":  "5",
+        "15M": "15", "15m": "15",
+        "30M": "30", "30m": "30",
+        "1H":  "60", "1h":  "60",
+        "2H":  "120","2h":  "120",
+        "4H":  "240","4h":  "240",
+        "1D":  "1D", "1d":  "1D", "D": "1D",
+        "1W":  "1W", "1w":  "1W", "W": "1W",
+    }
+    if timeframe in mapping:
+        return mapping[timeframe]
     raise TradingViewSyncError(
         f"TradingView sync does not support chart interval mapping for {timeframe}."
     )
