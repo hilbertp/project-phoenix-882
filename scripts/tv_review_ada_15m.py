@@ -112,28 +112,43 @@ p.innerHTML =
     '<div style="margin-bottom:6px;font-weight:bold;color:#f0b90b">Whats wrong?</div>' +
     '<div>' + b('Setup wrong (R)','wrong_setup','#7a6a1f',
                   'Anchors do not match a real swing (VERDICT_ADJUST)') +
-              b('Outcome wrong (F)','wrong_outcome','#7a2f31',
-                  'Anchors fine but executor scored the wrong outcome (VERDICT_REJECT)') + '</div>' +
+              b('Outcome wrong (F)','wrong_outcome_pick','#7a2f31',
+                  'Anchors fine but executor scored the wrong outcome (then pick 1/2/3/L/M)') + '</div>' +
+    '<div style="margin-top:5px;font-size:10px;color:#9aa4b2">Esc to cancel</div>' +
+  '</div>' +
+  '<div id="db1rv-outcome" style="display:none;border:1px solid #ef5350;border-radius:6px;padding:8px;margin-top:6px">' +
+    '<div style="margin-bottom:6px;font-weight:bold;color:#ef5350">What was the correct outcome?</div>' +
+    '<div>' + b('TP1 (1)','expected_tp1','#7a6a1f','Trade should have scored TP1 (small partial)') +
+              b('TP2 (2)','expected_tp2','#7a5230','Trade should have scored TP2 (decent partial)') +
+              b('TP3 (3)','expected_tp3','#1f6f63','Trade should have scored TP3 (full win)') + '</div>' +
+    '<div>' + b('Loss (L)','expected_loss','#7a2f31','Trade should have been a -1R loss') +
+              b('Miss (M)','expected_miss','#363a45','Trade should never have triggered') + '</div>' +
     '<div style="margin-top:5px;font-size:10px;color:#9aa4b2">Esc to cancel</div>' +
   '</div>' +
   '<div style="font-size:10px;color:#6b7785;margin-top:8px;line-height:1.5">' +
-    'keys: <b>W</b>=all ok &middot; <b>S</b>=wrong (then <b>R</b>=setup / <b>F</b>=outcome) &middot; ' +
+    'keys: <b>W</b>=all ok &middot; <b>S</b>=wrong (then <b>R</b>=setup / <b>F</b>=outcome &rarr; <b>1/2/3/L/M</b>) &middot; ' +
     '<b>A</b>/<b>D</b>=prev/next &middot; <b>Enter</b>=done' +
   '</div>' +
   '<div id="db1rv-info" style="margin-top:7px;font-size:11px;color:#9aa4b2;line-height:1.4"></div>';
 document.body.appendChild(p);
-function __setWrongMode(on){
-  document.getElementById('db1rv-main').style.display = on ? 'none' : 'block';
-  document.getElementById('db1rv-wrong').style.display = on ? 'block' : 'none';
+// Three-stage panel state:
+//   'main'    : show main buttons (Back/Next/all-ok/wrong/done)
+//   'wrong'   : show R/F sub-menu (after S pressed)
+//   'outcome' : show 1/2/3/L/M sub-menu (after F pressed)
+function __setMode(which){
+  document.getElementById('db1rv-main').style.display    = (which === 'main')    ? 'block' : 'none';
+  document.getElementById('db1rv-wrong').style.display   = (which === 'wrong')   ? 'block' : 'none';
+  document.getElementById('db1rv-outcome').style.display = (which === 'outcome') ? 'block' : 'none';
 }
 function __emit(act){
-  __setWrongMode(false);
+  __setMode('main');
   window.__reviewSeq = (window.__reviewSeq || 0) + 1;
   window.__reviewAction = {seq: window.__reviewSeq, action: act};
 }
 function __handle(act){
-  if (act === 'wrong')  { __setWrongMode(true); return; }
-  if (act === 'cancel') { __setWrongMode(false); return; }
+  if (act === 'wrong')              { __setMode('wrong');   return; }
+  if (act === 'wrong_outcome_pick') { __setMode('outcome'); return; }
+  if (act === 'cancel')             { __setMode('main');    return; }
   __emit(act);
 }
 p.querySelectorAll('button').forEach(function(btn){
@@ -147,16 +162,27 @@ window.__reviewStatus = function(title, info){
 };
 window.__reviewKeyHandler = function(e){
   if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) return;
-  var wrong = document.getElementById('db1rv-wrong').style.display === 'block';
+  var inWrong   = document.getElementById('db1rv-wrong').style.display   === 'block';
+  var inOutcome = document.getElementById('db1rv-outcome').style.display === 'block';
   var k = (e.key || '').toLowerCase();
   var act = null;
-  if (wrong) {
-    if (k === 'r')        act = 'wrong_setup';
-    else if (k === 'f')   act = 'wrong_outcome';
-    else if (k === 'escape') { __setWrongMode(false); e.preventDefault(); e.stopPropagation(); return; }
-    else if (k === 'a' || k === 'arrowleft')  { __setWrongMode(false); act = 'back'; }
-    else if (k === 'd' || k === 'arrowright') { __setWrongMode(false); act = 'next'; }
-    else if (k === 'enter') { __setWrongMode(false); act = 'done'; }
+  if (inOutcome) {
+    // 1/2/3/L/M -> emit verdict + correct-outcome tag; Esc -> back to main
+    if (k === '1')      act = 'expected_tp1';
+    else if (k === '2') act = 'expected_tp2';
+    else if (k === '3') act = 'expected_tp3';
+    else if (k === 'l') act = 'expected_loss';
+    else if (k === 'm') act = 'expected_miss';
+    else if (k === 'escape') { __setMode('main'); e.preventDefault(); e.stopPropagation(); return; }
+  } else if (inWrong) {
+    // R -> emit setup-wrong verdict; F -> step into outcome-correction;
+    // Esc -> back to main; A/D/Enter cancel-then-act.
+    if (k === 'r')                 act = 'wrong_setup';
+    else if (k === 'f')            { __setMode('outcome'); e.preventDefault(); e.stopPropagation(); return; }
+    else if (k === 'escape')       { __setMode('main'); e.preventDefault(); e.stopPropagation(); return; }
+    else if (k === 'a' || k === 'arrowleft')  { __setMode('main'); act = 'back'; }
+    else if (k === 'd' || k === 'arrowright') { __setMode('main'); act = 'next'; }
+    else if (k === 'enter')        { __setMode('main'); act = 'done'; }
   } else {
     var m = {
       w:'accept', arrowup:'accept',
@@ -613,26 +639,41 @@ def main():
                     i -= 1; show(i)
                 else:
                     show(i, extra="<i>(at first setup)</i>")
-            elif act in ("accept", "wrong_setup", "wrong_outcome"):
+            elif act in ("accept", "wrong_setup",
+                         "expected_tp1", "expected_tp2", "expected_tp3",
+                         "expected_loss", "expected_miss"):
                 leg = setups[i]
+                expected_outcome = None
                 if act == "accept":
-                    verdict = VERDICT_ACCEPT      # W: all ok
+                    verdict = VERDICT_ACCEPT          # W: all ok
                 elif act == "wrong_setup":
-                    verdict = VERDICT_ADJUST      # S then R: anchors wrong
-                else:                              # act == "wrong_outcome"
-                    verdict = VERDICT_REJECT      # S then F: outcome scoring wrong
-                label = make_label({
-                    "parent_ts": leg["parent_ts"], "term_ts": leg["term_ts"],
-                    "direction": leg["direction"],
-                    "parent_price": float(leg["parent_price"]),
-                    "term_price": float(leg["term_price"]),
-                }, verdict, detector_params={
+                    verdict = VERDICT_ADJUST          # S then R: anchors wrong
+                else:                                  # S then F then 1/2/3/L/M
+                    verdict = VERDICT_REJECT          # outcome scoring wrong
+                    expected_outcome = {
+                        "expected_tp1":  "TP1",
+                        "expected_tp2":  "TP2",
+                        "expected_tp3":  "TP3",
+                        "expected_loss": "LOSS",
+                        "expected_miss": "MISSED",
+                    }[act]
+                detector_params = {
                     "source": "tv_review_ada_15m",
                     "asset": "ADA",
                     "interval": "15m",
                     "min_bars": MIN_BARS,
                     "mult": ATR_MULT,
-                })
+                    "scored_outcome": leg.get("outcome_kind"),
+                    "scored_R": leg.get("outcome_r"),
+                }
+                if expected_outcome is not None:
+                    detector_params["expected_outcome"] = expected_outcome
+                label = make_label({
+                    "parent_ts": leg["parent_ts"], "term_ts": leg["term_ts"],
+                    "direction": leg["direction"],
+                    "parent_price": float(leg["parent_price"]),
+                    "term_price": float(leg["term_price"]),
+                }, verdict, detector_params=detector_params)
                 append_label(label, path=LABELS_PATH)
                 verdicts[i] = verdict
                 # Auto-advance to next on a verdict
