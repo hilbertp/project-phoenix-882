@@ -24,6 +24,7 @@ from __future__ import annotations
 import csv
 import json
 import os
+import re
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -693,19 +694,30 @@ def main():
         raise SystemExit("no triggered setups in window. Try a longer cutoff window "
                          "or set PHOENIX_REVIEW_INCLUDE_MISSES=1 to include misses.")
 
-    # Attach to running Chrome + force-navigate to a FRESH ADA chart URL
-    # (don't reuse whatever the user had open -- saved layouts can keep
-    # the view zoomed in such that only ~300 bars get loaded, which kills
-    # the bar-range filter).
+    # Attach to running Chrome + force-navigate to a FRESH ADA chart URL.
+    # Always navigate fresh: the chart URL may carry a saved-layout ID
+    # (like /chart/HrY4M7tK/...) that persists drawings from previous
+    # sessions. Those drawings overlap with the ones our script places,
+    # giving the user 'two fibs at the same time'. The bare /chart/?symbol
+    # URL doesn't carry layout-saved drawings.
     print("==> attaching to Chrome on :9222...", flush=True)
     driver = attach_chrome()
     print(f"  current URL: {driver.current_url[:80]}", flush=True)
-    if "tradingview.com/chart" not in driver.current_url \
-            or "ADAUSDT" not in driver.current_url.upper() \
-            or "interval=15" not in driver.current_url:
+    has_layout_id = "/chart/HrY4" in driver.current_url or \
+                    bool(re.search(r"/chart/[A-Za-z0-9]{6,}/", driver.current_url))
+    needs_nav = (
+        "tradingview.com/chart" not in driver.current_url
+        or "ADAUSDT" not in driver.current_url.upper()
+        or "interval=15" not in driver.current_url
+        or has_layout_id
+    )
+    if needs_nav:
+        if has_layout_id:
+            print("  saved-layout ID detected in URL; navigating to clean chart "
+                  "to avoid persisted-drawing overlap.")
         navigate_to_ada(driver)
     else:
-        print("  already on ADA 15m chart; not re-navigating.")
+        print("  already on clean ADA 15m chart; not re-navigating.")
 
     # Target: ~4 weeks of 15m bars = 2688. Reasonable for free TV on 15m,
     # gives us a meaningful review window without fighting TV's caps.
@@ -816,25 +828,58 @@ def main():
     verdicts = {}      # setup_index -> verdict string
     started_at = datetime.now(timezone.utc)
 
-    # Robust per-fib removal: removeAllDrawingTools() is async on TV's
-    # renderer and a 50ms sleep wasn't enough -- the OLD fib was still in
-    # the model when place_one added the new one, leaving both visible
-    # (user: 'still loading n and n+1 at the same time'). Iterate and call
-    # removeSource() on each LineTool, then poll until allLineTools() goes
-    # to zero. Synchronous, race-free.
-    REMOVE_ALL_LINETOOLS_JS = (
-        "const c=window._exposed_chartWidgetCollection;"
-        "if(!c) return -1;"
-        "const m=c._activeChartWidgetModel.value().model();"
-        "const tools=m.allLineTools().slice();"
-        "for(const t of tools){ try{ m.removeSource(t); }catch(e){} }"
-        "return m.allLineTools().length;"
-    )
-    COUNT_LINETOOLS_JS = (
-        "const c=window._exposed_chartWidgetCollection;"
-        "if(!c) return -1;"
-        "return c._activeChartWidgetModel.value().model().allLineTools().length;"
-    )
+    # MORE aggressive cleanup. The earlier `m.allLineTools()` iterator
+    # didn't catch fibs from a saved-layout chart (the user's chart URL
+    # carries a HrY4M7tK layout ID that restores persisted drawings each
+    # navigation). Sweep ALL panes' dataSources and remove anything whose
+    # constructor name contains 'LineTool' or 'Fib' -- catches the
+    # programmatically-added ones AND the layout-persistent ones.
+    REMOVE_ALL_LINETOOLS_JS = r"""
+        const c = window._exposed_chartWidgetCollection;
+        if (!c) return -1;
+        const widget = c._activeChartWidgetModel.value();
+        const model = widget.model();
+        let removed = 0;
+        // Sweep every pane's data sources.
+        const panes = (model.panes && model.panes()) || [];
+        for (const pane of panes) {
+            const sources = (pane.dataSources && pane.dataSources().slice()) || [];
+            for (const src of sources) {
+                try {
+                    const name = (src && src.constructor && src.constructor.name) || '';
+                    if (/LineTool|Fib|Retracement|Drawing/.test(name)) {
+                        try { model.removeSource(src); removed++; } catch(e) {}
+                    }
+                } catch (e) {}
+            }
+        }
+        // Also catch anything else allLineTools() reports (belt+suspenders)
+        try {
+            const tools = (model.allLineTools && model.allLineTools().slice()) || [];
+            for (const t of tools) {
+                try { model.removeSource(t); removed++; } catch(e) {}
+            }
+        } catch (e) {}
+        return removed;
+    """
+    COUNT_LINETOOLS_JS = r"""
+        const c = window._exposed_chartWidgetCollection;
+        if (!c) return -1;
+        const widget = c._activeChartWidgetModel.value();
+        const model = widget.model();
+        let count = 0;
+        const panes = (model.panes && model.panes()) || [];
+        for (const pane of panes) {
+            const sources = (pane.dataSources && pane.dataSources()) || [];
+            for (const src of sources) {
+                try {
+                    const name = (src && src.constructor && src.constructor.name) || '';
+                    if (/LineTool|Fib|Retracement|Drawing/.test(name)) count++;
+                } catch (e) {}
+            }
+        }
+        return count;
+    """
 
     def _clear_and_wait(max_ms=1000):
         driver.execute_script(REMOVE_ALL_LINETOOLS_JS)
