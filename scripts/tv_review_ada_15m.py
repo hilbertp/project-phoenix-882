@@ -594,8 +594,12 @@ def main():
 
     def show(i, extra=""):
         leg = setups[i]
-        # Single fib at a time -- match the BTC review's UX.
+        # Single fib at a time. Clear THEN small pause so TV's renderer
+        # actually flushes the removed drawing before we add a new one --
+        # without the pause, fast successive show() calls can leave the
+        # old fib briefly visible (the 'shows multiple sometime' bug).
         driver.execute_script(CLEAR_JS)
+        time.sleep(0.05)
         place_one(driver, leg, f"auto{i+1} << REVIEWING >> {i+1}/{len(setups)}", ctx)
         time.sleep(0.25)
         driver.execute_script(REAPPLY_NAMES_JS)
@@ -614,6 +618,21 @@ def main():
     i = 0
     last_seq = 0
     show(i)
+    # After every show() returns, drain any key presses that the user may have
+    # made WHILE show() was running (CLEAR + place + sleep + nav = ~1s). Without
+    # this, a stale press queued during one show fires as soon as we loop, causing
+    # 'jump 2 instead of 1'. Sync last_seq to the current __reviewSeq so anything
+    # that landed during the show is treated as already-seen.
+    def _drain_stale():
+        nonlocal last_seq
+        cur = driver.execute_script("return window.__reviewSeq || 0;")
+        try:
+            last_seq = int(cur) if cur is not None else last_seq
+        except (TypeError, ValueError):
+            pass
+        driver.execute_script("window.__reviewAction = null;")
+
+    _drain_stale()
     print("==> Panel ready. Press W/S/A/D/Enter in the TV chart window.", flush=True)
     print("    Verdicts append to data/discovery_bet_1/human_labels.jsonl.", flush=True)
     print("    Ctrl-C here to end early (still writes a session report).", flush=True)
@@ -623,7 +642,7 @@ def main():
             action = driver.execute_script("return window.__reviewAction;")
             seq = action.get("seq", 0) if isinstance(action, dict) else 0
             if seq <= last_seq:
-                time.sleep(0.4)
+                time.sleep(0.15)   # tighter poll, less perceived latency
                 continue
             last_seq = seq
             act = action.get("action") if isinstance(action, dict) else None
@@ -634,11 +653,13 @@ def main():
                     i += 1; show(i)
                 else:
                     show(i, extra="<i>(at last setup)</i>")
+                _drain_stale()
             elif act == "back":
                 if i > 0:
                     i -= 1; show(i)
                 else:
                     show(i, extra="<i>(at first setup)</i>")
+                _drain_stale()
             elif act in ("accept", "wrong_setup",
                          "expected_tp1", "expected_tp2", "expected_tp3",
                          "expected_loss", "expected_miss"):
@@ -676,11 +697,15 @@ def main():
                 }, verdict, detector_params=detector_params)
                 append_label(label, path=LABELS_PATH)
                 verdicts[i] = verdict
-                # Auto-advance to next on a verdict
+                # Auto-advance to next on a verdict, then drop any stale presses
+                # the user made WHILE show()'s ~1s render was running. Without
+                # this drain, a queued press fires immediately for the new setup
+                # -> the 'jump 2 instead of 1' bug.
                 if i + 1 < len(setups):
                     i += 1; show(i)
                 else:
                     show(i, extra=f"<i>recorded: {verdict}. last setup.</i>")
+                _drain_stale()
     except KeyboardInterrupt:
         print("\n==> Ctrl-C received -- writing session report...")
     finally:
