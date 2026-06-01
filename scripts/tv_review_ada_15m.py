@@ -556,19 +556,43 @@ def main():
         raise SystemExit("no triggered setups in window. Try a longer cutoff window "
                          "or set PHOENIX_REVIEW_INCLUDE_MISSES=1 to include misses.")
 
-    # Attach to running Chrome + navigate to ADA chart.
+    # Attach to running Chrome + force-navigate to a FRESH ADA chart URL
+    # (don't reuse whatever the user had open -- saved layouts can keep
+    # the view zoomed in such that only ~300 bars get loaded, which kills
+    # the bar-range filter).
     print("==> attaching to Chrome on :9222...", flush=True)
     driver = attach_chrome()
+    print(f"  current URL: {driver.current_url[:80]}", flush=True)
     if "tradingview.com/chart" not in driver.current_url \
-            or "ADAUSDT" not in driver.current_url.upper():
+            or "ADAUSDT" not in driver.current_url.upper() \
+            or "interval=15" not in driver.current_url:
         navigate_to_ada(driver)
+    else:
+        print("  already on ADA 15m chart; not re-navigating.")
 
-    # First, ask TV to load enough history to cover the review window. On a
-    # fresh chart navigation TV only loads ~300 bars (~3 days of 15m) which
-    # filters out all setups from the past 3 months. The internal timeScale
-    # exposes requestMoreHistoryPoints() -- we poke it a few times and wait
-    # for the bar count to grow, until we have ~3 months (~8640 bars) or
-    # the request stops paging anything new.
+    # Click TV's '3M' date-range tab to explicitly request 3 months of data.
+    # On a fresh 15m chart that loads ~8640 bars; on saved layouts it forces
+    # the zoom to span 3 months. Best primary path. Fall through to
+    # requestMoreHistoryPoints() if the button is missing or click is ignored.
+    try:
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        print("==> clicking TV's '3M' date-range tab...", flush=True)
+        btn = WebDriverWait(driver, 15).until(
+            EC.presence_of_element_located(
+                (By.CSS_SELECTOR, 'button[data-name="date-range-tab-3M"]')
+            )
+        )
+        driver.execute_script("arguments[0].click();", btn)
+        time.sleep(7)
+        print("  clicked, slept 7s for history fetch.", flush=True)
+    except Exception as exc:
+        print(f"  3M click skipped: {type(exc).__name__}; relying on "
+              f"requestMoreHistoryPoints fallback.", flush=True)
+
+    # Fallback safety net: poke requestMoreHistoryPoints() until we have at
+    # least NEED_BARS or TV stops paging in new data for 3 attempts.
     NEED_BARS = 90 * 24 * 4 + 200   # 3 months of 15m + safety margin
     print(f"==> ensuring TV has at least {NEED_BARS} bars loaded...", flush=True)
     last_n = -1
@@ -610,7 +634,10 @@ def main():
     if not (bar_range and bar_range.get("first") and bar_range.get("last")):
         raise SystemExit("could not read TV bar range -- is the chart loaded?")
     first_ep = int(bar_range["first"]); last_ep = int(bar_range["last"])
-    pad_secs = 60 * 60   # 60 minutes of margin
+    print(f"  TV's loaded window: {datetime.fromtimestamp(first_ep, tz=timezone.utc).isoformat()} "
+          f"-> {datetime.fromtimestamp(last_ep, tz=timezone.utc).isoformat()} "
+          f"({bar_range['n']} bars)", flush=True)
+    pad_secs = 15 * 60   # 15 minutes margin (was 60 min, but a single bar of pad is enough)
     kept = []
     for s in legs:
         try:
@@ -623,10 +650,21 @@ def main():
         if p_ep >= first_ep + pad_secs and t_ep <= last_ep:
             kept.append(s)
     if len(kept) < len(legs):
-        print(f"  TV loaded {bar_range['n']} bars; reviewing "
-              f"{len(kept)} of {len(legs)} setups in that window.")
+        print(f"  reviewing {len(kept)} of {len(legs)} setups that fit in TV's window.")
     if not kept:
-        raise SystemExit("no setups fall in TV's loaded bar range -- scroll left in TV first.")
+        # Diagnose what slipped through. Show the oldest setup's timestamp vs
+        # TV's earliest loaded bar to make the gap obvious.
+        oldest = min(legs, key=lambda s: s["parent_ts"]) if legs else None
+        if oldest:
+            print(f"  oldest setup parent_ts: {oldest['parent_ts']}")
+            print(f"  TV's earliest loaded:   "
+                  f"{datetime.fromtimestamp(first_ep, tz=timezone.utc).isoformat()}")
+        raise SystemExit(
+            "no setups fall in TV's loaded bar range. Options:\n"
+            "  1. Manually drag the TV chart left to load more bars, then re-run.\n"
+            "  2. Click TV's 'All' tab in the bottom-left date-range bar.\n"
+            "  3. Run on a shorter window: edit cutoff_dt in main() to (now - 14 days)."
+        )
     setups = kept
 
     # Number them for the panel/object tree.
