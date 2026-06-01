@@ -60,6 +60,7 @@ from scripts.review_fibs_tradingview import (
     INJECT_PANEL_JS,
     NAVIGATE_TO_FIB_JS,
     REAPPLY_NAMES_JS,
+    REPORT_OVERLAY_JS,
     _annotate_outcome,
     _annotate_span_depth,
     _info_html,
@@ -428,6 +429,139 @@ def _ada_info_html(i: int, n: int, leg: dict, extra: str = "", verdict: str | No
     return "".join(parts)
 
 
+def build_ada_report_html(setups: list, verdicts: dict, started_at, ended_at) -> str:
+    """ADA-flavored session-report HTML for the on-chart overlay.
+
+    Shows: timing + counts, verdict distribution (accept / setup-wrong /
+    outcome-wrong with per-expected-outcome breakdown), executor's score
+    distribution, and a per-cohort table. Returns HTML safe for injection
+    into the REPORT_OVERLAY_JS dialog.
+    """
+    from collections import Counter
+    n_total = len(setups)
+    n_reviewed = len(verdicts)
+    elapsed = (ended_at - started_at).total_seconds()
+
+    # Verdict counts
+    n_accept = sum(1 for v in verdicts.values() if v == VERDICT_ACCEPT)
+    n_setup_wrong = sum(1 for v in verdicts.values() if v == "setup_wrong")
+    outcome_wrongs = [v for v in verdicts.values() if str(v).startswith("outcome_wrong")]
+    n_outcome_wrong = len(outcome_wrongs)
+    # Tally what the user said the outcome SHOULD have been
+    expected_breakdown = Counter()
+    for v in outcome_wrongs:
+        # v looks like "outcome_wrong:TP1"
+        parts = str(v).split(":", 1)
+        if len(parts) == 2:
+            expected_breakdown[parts[1]] += 1
+
+    # Executor's score distribution across all setups (the 0.941 scoring)
+    exec_kinds = Counter(s.get("outcome_kind") for s in setups)
+    n_tp1 = exec_kinds.get("scratch", 0)
+    n_tp2 = exec_kinds.get("partial", 0)
+    n_tp3 = exec_kinds.get("win", 0)
+    n_loss = exec_kinds.get("loss", 0)
+    n_open = exec_kinds.get("open", 0)
+    n_executor_triggered = n_tp1 + n_tp2 + n_tp3 + n_loss
+    win_rate = (n_tp1 + n_tp2 + n_tp3) / n_executor_triggered if n_executor_triggered else 0
+    rs = [s.get("outcome_r", 0.0) for s in setups]
+    avg_r = sum(rs) / len(rs) if rs else 0
+
+    # Per-cohort breakdown
+    by_cohort = {}
+    for k, leg in enumerate(setups):
+        c = cohort_for(leg.get("depth", 0))
+        by_cohort.setdefault(c, {"n": 0, "accept": 0, "setup_wrong": 0, "outcome_wrong": 0, "skip": 0})
+        by_cohort[c]["n"] += 1
+        if k in verdicts:
+            v = verdicts[k]
+            if v == VERDICT_ACCEPT:           by_cohort[c]["accept"] += 1
+            elif v == "setup_wrong":          by_cohort[c]["setup_wrong"] += 1
+            elif str(v).startswith("outcome_wrong"): by_cohort[c]["outcome_wrong"] += 1
+        else:
+            by_cohort[c]["skip"] += 1
+
+    head = (
+        f"<h2 style='margin:0 0 10px'>ADA 15m Review &mdash; session report</h2>"
+        f"<div style='color:#9aa4b2;font-size:12px;margin-bottom:12px'>"
+        f"{started_at.strftime('%Y-%m-%d %H:%M')} &rarr; "
+        f"{ended_at.strftime('%H:%M:%S')}  ({elapsed:.0f}s &middot; {elapsed/60:.1f} min) "
+        f"&middot; symbol BINANCE:ADAUSDT @ 15m &middot; "
+        f"detector {MIN_BARS}c / {ATR_MULT:.1f}&times; ATR</div>"
+        f"<div style='font-size:14px;margin-bottom:10px'>"
+        f"<b>{n_reviewed}</b> / {n_total} setups reviewed "
+        f"({n_reviewed/max(1, n_total)*100:.0f}%)</div>"
+    )
+
+    your_verdicts = (
+        f"<h3 style='margin:12px 0 6px;color:#cdd9e5'>Your verdicts</h3>"
+        f"<div style='margin-bottom:10px'>"
+        f"<b style='color:#26a69a'>{n_accept} all ok (W)</b> &middot; "
+        f"<b style='color:#f0b90b'>{n_setup_wrong} setup wrong (R)</b> &middot; "
+        f"<b style='color:#ef5350'>{n_outcome_wrong} outcome wrong (F)</b> &middot; "
+        f"<span style='color:#6b7785'>{n_total - n_reviewed} unreviewed</span>"
+        f"</div>"
+    )
+    if expected_breakdown:
+        your_verdicts += (
+            f"<div style='font-size:12px;color:#9aa4b2;margin-bottom:10px'>"
+            f"outcome-wrong breakdown &mdash; what the trade SHOULD have been: "
+            + " &middot; ".join(
+                f"<b style='color:#f0a020'>{k}: {v}</b>"
+                for k, v in expected_breakdown.most_common()
+            )
+            + "</div>"
+        )
+
+    executor_view = (
+        f"<h3 style='margin:12px 0 6px;color:#cdd9e5'>What the executor scored "
+        f"(0.941 entry, gross)</h3>"
+        f"<div style='margin-bottom:10px'>"
+        f"<b style='color:#26a69a'>TP3 (full win) {n_tp3}</b> &middot; "
+        f"<b style='color:#f0a020'>TP2 {n_tp2}</b> &middot; "
+        f"<b style='color:#f0b90b'>TP1 {n_tp1}</b> &middot; "
+        f"<b style='color:#ef5350'>LOSS {n_loss}</b>"
+        f"{f' &middot; OPEN {n_open}' if n_open else ''}"
+        f"</div>"
+        f"<div style='font-size:12px;color:#9aa4b2;margin-bottom:12px'>"
+        f"win rate (TP1+TP2+TP3)/N = <b>{win_rate:.0%}</b> "
+        f"(N={n_executor_triggered}) &middot; avg R per setup: <b>{avg_r:+.2f}</b>"
+        f"</div>"
+    )
+
+    # Cohort table
+    cohort_rows = "".join(
+        f"<tr><td>{c}</td><td>{cc['n']}</td>"
+        f"<td style='color:#26a69a'>{cc['accept']}</td>"
+        f"<td style='color:#f0b90b'>{cc['setup_wrong']}</td>"
+        f"<td style='color:#ef5350'>{cc['outcome_wrong']}</td>"
+        f"<td style='color:#6b7785'>{cc['skip']}</td></tr>"
+        for c, cc in sorted(by_cohort.items())
+    )
+    cohort_table = (
+        f"<h3 style='margin:12px 0 6px;color:#cdd9e5'>Per leg-depth cohort</h3>"
+        f"<table style='border-collapse:collapse;font-size:12px'>"
+        f"<tr style='color:#8b949e;text-align:left'>"
+        f"<th style='padding:3px 12px 3px 0'>cohort (&times;ATR)</th>"
+        f"<th style='padding:3px 12px 3px 0'>setups</th>"
+        f"<th style='padding:3px 12px 3px 0'>accept (W)</th>"
+        f"<th style='padding:3px 12px 3px 0'>setup wrong (R)</th>"
+        f"<th style='padding:3px 12px 3px 0'>outcome wrong (F)</th>"
+        f"<th style='padding:3px 12px 3px 0'>skipped</th></tr>"
+        f"{cohort_rows}</table>"
+    )
+
+    footer = (
+        f"<div style='margin-top:14px;font-size:11px;color:#6b7785'>"
+        f"Verdicts written to: data/discovery_bet_1/human_labels.jsonl<br>"
+        f"Markdown copy of this report: artifacts/discovery_bet_1/manual_review_ada_15m/SESSION_*.md<br>"
+        f"Press the Close button to dismiss this overlay."
+        f"</div>"
+    )
+
+    return head + your_verdicts + executor_view + cohort_table + footer
+
+
 def cohort_for(depth_atr: float) -> str:
     if depth_atr < 6: return "4-6"
     if depth_atr < 8: return "6-8"
@@ -769,7 +903,7 @@ def main():
             last_seq = seq
             act = action.get("action") if isinstance(action, dict) else None
             if act == "done":
-                break
+                break  # exits to finally where the overlay + markdown are written
             elif act == "next":
                 if i + 1 < len(setups):
                     i += 1; show(i)
@@ -854,9 +988,19 @@ def main():
         ts = ended_at.strftime("%Y%m%dT%H%M%S")
         report_path = OUT_DIR / f"SESSION_{ts}.md"
         write_session_report(setups, verdicts, started_at, ended_at, report_path)
-        print(f"==> session report: {report_path}")
+        print(f"==> session report (markdown): {report_path}")
         print(f"==> labels appended to: {LABELS_PATH}")
-        # Best-effort: clear the review panel and leave the chart usable.
+        # Render the report overlay ON the TV chart FIRST -- if we cleared
+        # the panel first, the overlay might appear behind a flash of empty
+        # chart and feel jarring. Best effort throughout.
+        try:
+            report_html = build_ada_report_html(setups, verdicts, started_at, ended_at)
+            driver.execute_script(REPORT_OVERLAY_JS, report_html)
+            print(f"==> report overlay rendered on TV chart (Close button on it to dismiss).")
+        except Exception as exc:
+            print(f"  warn: report overlay failed: {exc}", file=sys.stderr)
+        # Now clear the review panel + keybindings + drawings, leaving only
+        # the report overlay on top of a clean chart.
         try:
             driver.execute_script(
                 "const p=document.getElementById('db1rv-panel');"
