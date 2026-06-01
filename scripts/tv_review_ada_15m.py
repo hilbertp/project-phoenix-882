@@ -301,42 +301,42 @@ def navigate_to_fib(driver, leg):
 
 
 _ADA_OUTCOME_STYLE = {
-    # kind -> (label, color, emoji)
-    "miss":    ("MISS / SHRUG", "#9aa4b2", "○"),
-    "loss":    ("LOSS", "#ef5350", "✗"),
-    "scratch": ("SCRATCH", "#f0b90b", "≈"),
-    "partial": ("PARTIAL WIN", "#f0a020", "◐"),
-    "win":     ("FULL WIN", "#26a69a", "✓"),
-    "open":    ("OPEN", "#2962ff", "↻"),
-}
-
-_ADA_VERDICT_BADGE = {
-    "accept":  ("✓ ACCEPTED",       "#26a69a"),
-    "adjust":  ("✎ SETUP WRONG",    "#f0b90b"),
-    "reject":  ("✗ OUTCOME WRONG",  "#ef5350"),
-    "add":     ("+ ADDED",          "#8957e5"),
+    # Five outcomes the user cares about (no internal-jargon names):
+    # kind (executor status) -> (display label, color)
+    "miss":    ("MISSED", "#9aa4b2"),   # gray
+    "loss":    ("LOSS",   "#ef5350"),   # red
+    "scratch": ("TP1",    "#f0b90b"),   # yellow (small partial)
+    "partial": ("TP2",    "#f0a020"),   # orange (decent partial)
+    "win":     ("TP3",    "#26a69a"),   # green (full target)
+    "open":    ("OPEN",   "#9aa4b2"),   # gray (treat 'still running' as neutral)
 }
 
 
 def _ada_info_html(i: int, n: int, leg: dict, extra: str = "", verdict: str | None = None) -> str:
-    """ADA-specific info renderer: BIG outcome + R, neutral gate line.
+    """ADA panel info: ONE colored thing (the outcome), everything else neutral.
 
     Layout (top to bottom):
-      [verdict badge if any]
-      [BIG OUTCOME + R, color-coded]
-      direction (green/red arrow)
-      parent_ts → term_ts
-      N candles · X.X× ATR deep
-      gate-check line in plain gray (no color)
+      [verdict badge if any   -- plain, no color]
+      [BIG outcome             -- the ONLY colored element]
+      setup i / n
+      parent_ts -> term_ts
+      N candles, X.X x ATR deep
+      gate line (neutral)
     """
     parts = []
 
-    # Verdict badge (if reviewed)
+    # Verdict badge (if reviewed) -- plain, no color per user "remove all
+    # color coding except for the outcome"
     if verdict:
-        txt, col = _ADA_VERDICT_BADGE.get(verdict, (verdict.upper(), "#9aa4b2"))
+        verdict_text = {
+            "accept": "ACCEPTED",
+            "adjust": "SETUP WRONG",
+            "reject": "OUTCOME WRONG",
+            "add":    "ADDED",
+        }.get(verdict, verdict.upper())
         parts.append(
-            f"<div style='font-weight:bold;font-size:13px;color:{col};"
-            f"margin-bottom:8px'>{txt}</div>"
+            f"<div style='font-weight:bold;font-size:12px;color:#cdd9e5;"
+            f"margin-bottom:8px'>{verdict_text}</div>"
         )
     else:
         parts.append(
@@ -344,35 +344,22 @@ def _ada_info_html(i: int, n: int, leg: dict, extra: str = "", verdict: str | No
             "&bull; not reviewed yet</div>"
         )
 
-    # BIG outcome line
+    # THE BIG colored thing: outcome label. 24px, bold, the only color cue.
     kind = leg.get("outcome_kind") or "open"
-    olabel, ocol, oemoji = _ADA_OUTCOME_STYLE.get(kind, ("?", "#9aa4b2", "?"))
-    r_val = leg.get("outcome_r", 0.0)
+    olabel, ocol = _ADA_OUTCOME_STYLE.get(kind, ("?", "#9aa4b2"))
     parts.append(
-        f"<div style='font-weight:bold;font-size:17px;color:{ocol};"
-        f"line-height:1.2;margin-bottom:2px'>"
-        f"{oemoji} {olabel}</div>"
-    )
-    # BIG R-multiple, signed-colored
-    r_col = "#26a69a" if r_val > 0.05 else ("#ef5350" if r_val < -0.05 else "#9aa4b2")
-    parts.append(
-        f"<div style='font-weight:bold;font-size:20px;color:{r_col};"
-        f"line-height:1.1;margin-bottom:10px;font-variant-numeric:tabular-nums'>"
-        f"{r_val:+.2f}R</div>"
+        f"<div style='font-weight:bold;font-size:24px;color:{ocol};"
+        f"line-height:1.1;margin-bottom:12px;letter-spacing:0.04em'>"
+        f"{olabel}</div>"
     )
 
-    # Direction + setup index
-    direction = leg["direction"]
-    dir_col = "#26a69a" if direction == "up" else "#ef5350"
-    dir_arrow = "▲" if direction == "up" else "▼"
+    # Setup index (no direction -- the chart already shows up/down geometry)
     parts.append(
-        f"<div style='font-size:12px;color:#cdd9e5;margin-bottom:4px'>"
-        f"<b style='color:{dir_col}'>{dir_arrow} {direction.upper()}</b>"
-        f" &nbsp; <span style='color:#6b7785'>setup {i + 1} / {n}</span>"
-        f"</div>"
+        f"<div style='font-size:11px;color:#6b7785;margin-bottom:4px'>"
+        f"setup {i + 1} / {n}</div>"
     )
 
-    # Timestamps
+    # Timestamps in mono, plain
     parts.append(
         f"<div style='font-size:11px;color:#9aa4b2;font-family:ui-monospace,monospace;"
         f"margin-bottom:4px'>"
@@ -380,16 +367,16 @@ def _ada_info_html(i: int, n: int, leg: dict, extra: str = "", verdict: str | No
         f"</div>"
     )
 
-    # Span + depth (the detector's quality gauges)
+    # Span + depth (the detector's quality gauges) -- plain
     span = leg.get("span", "?")
     depth = leg.get("depth", 0.0)
     parts.append(
         f"<div style='font-size:11px;color:#cdd9e5;margin-bottom:2px'>"
-        f"<b>{span} candles</b> &middot; <b>{depth:.1f}&times; ATR</b> deep"
+        f"{span} candles &middot; {depth:.1f}&times; ATR deep"
         f"</div>"
     )
 
-    # Gate-clear line: NEUTRAL GRAY (no color coding per user request)
+    # Gate-clear line: NEUTRAL gray (user explicitly asked: don't color this)
     if span != "?":
         min_bars = 6
         min_atr = 2.0
