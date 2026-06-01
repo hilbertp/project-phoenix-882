@@ -70,9 +70,14 @@ from apps.api.db1_review_tradingview.service import (
 from apps.worker.discovery_bet_1.types import PivotKind
 
 # --- ADA 15m config ---
-SYMBOL = "BITGET:ADAUSDT.P"
+# IMPORTANT: SYMBOL must match the data source. The CSV is from Binance public
+# REST (spot ADAUSDT) so the TV chart MUST be BINANCE:ADAUSDT (spot), NOT
+# BITGET:ADAUSDT.P (Bitget perp). Mismatched exchanges -> different OHLC per
+# candle -> parent/term dots land on bars with different highs/lows -> "anchors
+# very very badly mismatched". We learned this the hard way on a real review.
+SYMBOL = "BINANCE:ADAUSDT"
 TV_INTERVAL = "15"
-CHART_URL = f"https://www.tradingview.com/chart/?symbol=BITGET%3AADAUSDT.P&interval={TV_INTERVAL}"
+CHART_URL = f"https://www.tradingview.com/chart/?symbol={SYMBOL.replace(':', '%3A')}&interval={TV_INTERVAL}"
 CSV_PATH = REPO_ROOT / "data/discovery_bet_1/binance_adausdt_15m_full_history.csv"
 MIN_BARS = 6
 ATR_MULT = 2.0
