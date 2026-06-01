@@ -563,7 +563,42 @@ def main():
             or "ADAUSDT" not in driver.current_url.upper():
         navigate_to_ada(driver)
 
-    # Read TV's actual loaded bar range + filter setups to those that fit.
+    # First, ask TV to load enough history to cover the review window. On a
+    # fresh chart navigation TV only loads ~300 bars (~3 days of 15m) which
+    # filters out all setups from the past 3 months. The internal timeScale
+    # exposes requestMoreHistoryPoints() -- we poke it a few times and wait
+    # for the bar count to grow, until we have ~3 months (~8640 bars) or
+    # the request stops paging anything new.
+    NEED_BARS = 90 * 24 * 4 + 200   # 3 months of 15m + safety margin
+    print(f"==> ensuring TV has at least {NEED_BARS} bars loaded...", flush=True)
+    last_n = -1
+    for attempt in range(40):
+        n = driver.execute_script(
+            "const c=window._exposed_chartWidgetCollection;"
+            "if(!c) return 0;"
+            "return c._activeChartWidgetModel.value().model().mainSeries().data().size();"
+        ) or 0
+        if n >= NEED_BARS:
+            print(f"  loaded {n} bars (target {NEED_BARS}), proceeding.")
+            break
+        if n == last_n and attempt > 5:
+            print(f"  TV stopped loading new bars at {n} (3 attempts with no progress); "
+                  f"proceeding with what we have.")
+            break
+        # Request more history. The method exists on the timeScale.
+        driver.execute_script(
+            "const c=window._exposed_chartWidgetCollection;"
+            "if(c){const ts=c._activeChartWidgetModel.value().model().timeScale();"
+            "if(ts.requestMoreHistoryPoints) ts.requestMoreHistoryPoints();}"
+        )
+        if attempt % 5 == 0:
+            print(f"  attempt {attempt + 1}: {n} bars so far, requesting more...", flush=True)
+        last_n = n
+        time.sleep(1.0)
+    else:
+        print(f"  WARNING: gave up after 40 attempts; reviewing whatever's loaded.")
+
+    # Now read TV's actual loaded bar range + filter setups to those that fit.
     print("==> reading TV's loaded bar range + filtering setups...", flush=True)
     bar_range = driver.execute_script(
         "const c=window._exposed_chartWidgetCollection;"
