@@ -570,57 +570,41 @@ def main():
     else:
         print("  already on ADA 15m chart; not re-navigating.")
 
-    # Click TV's '3M' date-range tab to explicitly request 3 months of data.
-    # On a fresh 15m chart that loads ~8640 bars; on saved layouts it forces
-    # the zoom to span 3 months. Best primary path. Fall through to
-    # requestMoreHistoryPoints() if the button is missing or click is ignored.
-    try:
-        from selenium.webdriver.common.by import By
-        from selenium.webdriver.support.ui import WebDriverWait
-        from selenium.webdriver.support import expected_conditions as EC
-        print("==> clicking TV's '3M' date-range tab...", flush=True)
-        btn = WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located(
-                (By.CSS_SELECTOR, 'button[data-name="date-range-tab-3M"]')
-            )
-        )
-        driver.execute_script("arguments[0].click();", btn)
-        time.sleep(7)
-        print("  clicked, slept 7s for history fetch.", flush=True)
-    except Exception as exc:
-        print(f"  3M click skipped: {type(exc).__name__}; relying on "
-              f"requestMoreHistoryPoints fallback.", flush=True)
-
-    # Fallback safety net: poke requestMoreHistoryPoints() until we have at
-    # least NEED_BARS or TV stops paging in new data for 3 attempts.
-    NEED_BARS = 90 * 24 * 4 + 200   # 3 months of 15m + safety margin
-    print(f"==> ensuring TV has at least {NEED_BARS} bars loaded...", flush=True)
+    # Page in as much history as TV will give us via requestMoreHistoryPoints.
+    # We do NOT click the '3M' date-range tab -- that's right for the 1H BTC
+    # flow (3M ~ 2000 bars, easy load) but on 15m the same button asks TV for
+    # ~8640 bars and on a free session TV just stops paging earlier. Better
+    # to ask page-by-page and use whatever we get. The cutoff window auto-
+    # narrows to match TV's actual earliest bar -- no setups get silently
+    # dropped, you just review whatever fits.
+    print("==> paging in history with requestMoreHistoryPoints "
+          "(stops when TV stops giving more)...", flush=True)
     last_n = -1
-    for attempt in range(40):
+    stagnant_streak = 0
+    for attempt in range(30):
         n = driver.execute_script(
             "const c=window._exposed_chartWidgetCollection;"
             "if(!c) return 0;"
             "return c._activeChartWidgetModel.value().model().mainSeries().data().size();"
         ) or 0
-        if n >= NEED_BARS:
-            print(f"  loaded {n} bars (target {NEED_BARS}), proceeding.")
-            break
-        if n == last_n and attempt > 5:
-            print(f"  TV stopped loading new bars at {n} (3 attempts with no progress); "
-                  f"proceeding with what we have.")
-            break
-        # Request more history. The method exists on the timeScale.
+        if n == last_n:
+            stagnant_streak += 1
+            if stagnant_streak >= 3:
+                print(f"  TV stopped paging at {n} bars (3 attempts no growth); proceeding.")
+                break
+        else:
+            stagnant_streak = 0
+        # Ask for more.
         driver.execute_script(
             "const c=window._exposed_chartWidgetCollection;"
             "if(c){const ts=c._activeChartWidgetModel.value().model().timeScale();"
             "if(ts.requestMoreHistoryPoints) ts.requestMoreHistoryPoints();}"
         )
         if attempt % 5 == 0:
-            print(f"  attempt {attempt + 1}: {n} bars so far, requesting more...", flush=True)
+            print(f"  attempt {attempt + 1}: {n} bars loaded.", flush=True)
         last_n = n
-        time.sleep(1.0)
-    else:
-        print(f"  WARNING: gave up after 40 attempts; reviewing whatever's loaded.")
+        time.sleep(0.8)
+    print(f"  finished paging; {n} bars loaded.", flush=True)
 
     # Now read TV's actual loaded bar range + filter setups to those that fit.
     print("==> reading TV's loaded bar range + filtering setups...", flush=True)
@@ -649,23 +633,27 @@ def main():
             continue
         if p_ep >= first_ep + pad_secs and t_ep <= last_ep:
             kept.append(s)
-    if len(kept) < len(legs):
-        print(f"  reviewing {len(kept)} of {len(legs)} setups that fit in TV's window.")
-    if not kept:
-        # Diagnose what slipped through. Show the oldest setup's timestamp vs
-        # TV's earliest loaded bar to make the gap obvious.
-        oldest = min(legs, key=lambda s: s["parent_ts"]) if legs else None
-        if oldest:
-            print(f"  oldest setup parent_ts: {oldest['parent_ts']}")
-            print(f"  TV's earliest loaded:   "
-                  f"{datetime.fromtimestamp(first_ep, tz=timezone.utc).isoformat()}")
+    if kept:
+        print(f"  reviewing {len(kept)} of {len(legs)} setups that fit TV's window.")
+        setups = kept
+    else:
+        # Don't crash -- review whatever's reviewable. The cutoff window was
+        # the user's wish (last 3 months); TV gave us a shorter window. Show
+        # what we have, tell the user how to expand if they want more.
+        oldest_first = datetime.fromtimestamp(first_ep, tz=timezone.utc).isoformat()
+        print(f"  TV's earliest bar: {oldest_first}", flush=True)
+        if legs:
+            print(f"  oldest detected setup: {legs[0]['parent_ts']} (older than TV's bars)")
         raise SystemExit(
-            "no setups fall in TV's loaded bar range. Options:\n"
-            "  1. Manually drag the TV chart left to load more bars, then re-run.\n"
-            "  2. Click TV's 'All' tab in the bottom-left date-range bar.\n"
-            "  3. Run on a shorter window: edit cutoff_dt in main() to (now - 14 days)."
+            f"TV loaded only {bar_range['n']} bars on this 15m chart -- not enough\n"
+            f"to cover any of the {len(legs)} setups detected in the last 3 months.\n\n"
+            f"Quickest fix: in the Chrome TV window, DRAG THE CHART LEFTWARD\n"
+            f"with your mouse a few times until earlier candles appear, then\n"
+            f"re-run the play button. Each leftward drag asks TV for more\n"
+            f"history; on a free session you'll get ~1-4 weeks of 15m at most.\n\n"
+            f"Or upgrade your TV plan if you want 3 months of 15m loadable\n"
+            f"automatically."
         )
-    setups = kept
 
     # Number them for the panel/object tree.
     for i, leg in enumerate(setups, start=1):
