@@ -40,6 +40,7 @@ from selenium.webdriver.chrome.options import Options
 from apps.worker.discovery_bet_1.atr import calculate_atr14
 from apps.worker.discovery_bet_1.human_labels import (
     VERDICT_ACCEPT,
+    VERDICT_ADJUST,
     VERDICT_REJECT,
     append_label,
     make_label,
@@ -69,6 +70,111 @@ import scripts.review_fibs_tradingview as _rf
 # constants via the module's namespace, so mutating the dict here is enough.
 _rf.DETECTOR_PARAMS["min_bars"] = 6
 _rf.DETECTOR_PARAMS["atr_mult"] = 2.0
+
+
+# ADA-specific panel: simpler verdict scheme.
+#   W / Up    = all ok                       (VERDICT_ACCEPT)
+#   S / Down  = something wrong -> sub-menu  (then R or F)
+#     R       = setup is wrong (anchors)     (VERDICT_ADJUST)
+#     F       = outcome is wrong (scoring)   (VERDICT_REJECT)
+#     Escape  = cancel sub-menu
+#   A / Left  = previous setup
+#   D / Right = next setup
+#   Enter     = Done (end session, write report)
+ADA_INJECT_PANEL_JS = r"""
+(function(){
+  if (window.__reviewKeyHandler) {
+    document.removeEventListener('keydown', window.__reviewKeyHandler, true);
+  }
+  const existing = document.getElementById('db1rv-panel');
+  if (existing) existing.remove();
+  const p = document.createElement('div');
+  p.id = 'db1rv-panel';
+  p.style.cssText = 'position:fixed;top:90px;right:18px;z-index:2147483647;background:#1e222d;color:#fff;padding:10px;border-radius:8px;font:12px -apple-system,sans-serif;box-shadow:0 2px 14px rgba(0,0,0,.6);width:320px';
+  function btn(label, act, bg, title){
+    return '<button data-act="'+act+'" title="'+(title||'')+'" '+
+      'style="margin:2px;padding:7px 10px;border:0;border-radius:4px;cursor:pointer;background:'+bg+';color:#fff;font-size:12px">'+label+'</button>';
+  }
+  p.innerHTML =
+    '<div id="db1rv-title" style="font-weight:bold;margin-bottom:8px">ADA 15m Review</div>' +
+    '<div id="db1rv-main">' +
+      '<div>' + btn('◀ Back (A)','back','#363a45','Previous setup') +
+                btn('Next (D) ▶','next','#2962ff','Next setup') + '</div>' +
+      '<div>' + btn('✓ all ok (W)','accept','#26a69a','Setup AND outcome look right') +
+                btn('✗ something wrong (S)','wrong','#ef5350','Either setup or outcome is wrong (then press R or F)') + '</div>' +
+      '<div>' + btn('Done — end session (Enter)','done','#363a45',
+                    'End the review. Session report is written to artifacts/discovery_bet_1/manual_review_ada_15m/SESSION_<ts>.md') + '</div>' +
+    '</div>' +
+    '<div id="db1rv-wrong" style="display:none;border:1px solid #f0b90b;border-radius:6px;padding:8px;margin-top:6px">' +
+      '<div style="margin-bottom:6px;font-weight:bold;color:#f0b90b">What\'s wrong?</div>' +
+      '<div>' + btn('Setup wrong (R)','wrong_setup','#7a6a1f',
+                    'Anchors do not match a real swing (VERDICT_ADJUST)') +
+                btn('Outcome wrong (F)','wrong_outcome','#7a2f31',
+                    'Anchors fine but executor scored the wrong outcome (VERDICT_REJECT)') + '</div>' +
+      '<div style="margin-top:5px;font-size:10px;color:#9aa4b2">Esc to cancel</div>' +
+    '</div>' +
+    '<div style="font-size:10px;color:#6b7785;margin-top:8px;line-height:1.5">' +
+      'keys: <b>W</b>=all ok &middot; <b>S</b>=wrong (then <b>R</b>=setup / <b>F</b>=outcome) &middot; ' +
+      '<b>A</b>/<b>D</b>=prev/next &middot; <b>Enter</b>=done' +
+    '</div>' +
+    '<div id="db1rv-info" style="margin-top:7px;font-size:11px;color:#9aa4b2;line-height:1.4"></div>';
+  document.body.appendChild(p);
+
+  function setWrongMode(on){
+    document.getElementById('db1rv-main').style.display = on ? 'none' : 'block';
+    document.getElementById('db1rv-wrong').style.display = on ? 'block' : 'none';
+  }
+  function emit(act){
+    setWrongMode(false);
+    window.__reviewSeq = (window.__reviewSeq || 0) + 1;
+    window.__reviewAction = {seq: window.__reviewSeq, action: act};
+  }
+  function handle(act){
+    if (act === 'wrong')      { setWrongMode(true); return; }
+    if (act === 'cancel')     { setWrongMode(false); return; }
+    emit(act);
+  }
+  p.querySelectorAll('button').forEach(function(b){
+    b.onclick = function(){ handle(b.getAttribute('data-act')); };
+  });
+  window.__reviewStatus = function(title, info){
+    const t = document.getElementById('db1rv-title');
+    if (t) t.textContent = title;
+    const i = document.getElementById('db1rv-info');
+    if (i && info != null) i.innerHTML = info;
+  };
+  window.__reviewKeyHandler = function(e){
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) return;
+    const wrong = document.getElementById('db1rv-wrong').style.display === 'block';
+    const k = (e.key || '').toLowerCase();
+    let act = null;
+    if (wrong) {
+      if (k === 'r')       act = 'wrong_setup';
+      else if (k === 'f')  act = 'wrong_outcome';
+      else if (k === 'escape') { setWrongMode(false); e.preventDefault(); e.stopPropagation(); return; }
+      else if (k === 'a' || k === 'arrowleft')  { setWrongMode(false); act = 'back'; }
+      else if (k === 'd' || k === 'arrowright') { setWrongMode(false); act = 'next'; }
+      else if (k === 'enter') { setWrongMode(false); act = 'done'; }
+    } else {
+      const m = {
+        w:'accept', arrowup:'accept',
+        s:'wrong',  arrowdown:'wrong',
+        a:'back',   arrowleft:'back',
+        d:'next',   arrowright:'next',
+        enter:'done',
+      };
+      act = m[k];
+    }
+    if (act) {
+      handle(act);
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  };
+  document.addEventListener('keydown', window.__reviewKeyHandler, true);
+  return {ok:true};
+})();
+"""
 from apps.api.db1_review_tradingview.service import (
     DB1TradingViewSyncService,
     TradingViewMarketContract,
@@ -210,11 +316,13 @@ def write_session_report(setups, verdicts, started_at, ended_at, out_path):
     by_cohort = {}
     for k, leg in enumerate(setups):
         c = cohort_for(leg.get("depth", 0))
-        by_cohort.setdefault(c, {"reviewed": 0, "accept": 0, "reject": 0, "skip": 0})
+        by_cohort.setdefault(c, {"reviewed": 0, "accept": 0,
+                                  "adjust": 0, "reject": 0, "skip": 0})
         if k in verdicts:
             by_cohort[c]["reviewed"] += 1
             v = verdicts[k]
             if v == VERDICT_ACCEPT: by_cohort[c]["accept"] += 1
+            elif v == VERDICT_ADJUST: by_cohort[c]["adjust"] += 1
             elif v == VERDICT_REJECT: by_cohort[c]["reject"] += 1
         else:
             by_cohort[c]["skip"] += 1
@@ -242,20 +350,21 @@ def write_session_report(setups, verdicts, started_at, ended_at, out_path):
         f"",
         f"## Verdict counts",
         f"",
-        f"| Verdict | Count |",
-        f"|---|---|",
-        f"| accept   | {verdict_counts.get(VERDICT_ACCEPT, 0)} |",
-        f"| reject   | {verdict_counts.get(VERDICT_REJECT, 0)} |",
-        f"| (skipped — no verdict) | {len(setups) - n} |",
+        f"| Verdict | Count | Meaning |",
+        f"|---|---|---|",
+        f"| accept (W)               | {verdict_counts.get(VERDICT_ACCEPT, 0)} | all ok |",
+        f"| adjust (S → R)           | {verdict_counts.get(VERDICT_ADJUST, 0)} | setup wrong (anchors) |",
+        f"| reject (S → F)           | {verdict_counts.get(VERDICT_REJECT, 0)} | outcome wrong (scoring) |",
+        f"| (skipped — no verdict)   | {len(setups) - n} | not reviewed |",
         f"",
         f"## Per-cohort breakdown",
         f"",
-        f"| Cohort (×ATR) | Total | Reviewed | Accepted | Rejected |",
-        f"|---|---|---|---|---|",
+        f"| Cohort (×ATR) | Total | Reviewed | Accept (W) | Setup-wrong (R) | Outcome-wrong (F) |",
+        f"|---|---|---|---|---|---|",
     ]
     for cohort, c in sorted(by_cohort.items()):
         total = c["reviewed"] + c["skip"]
-        lines.append(f"| {cohort} | {total} | {c['reviewed']} | {c['accept']} | {c['reject']} |")
+        lines.append(f"| {cohort} | {total} | {c['reviewed']} | {c['accept']} | {c['adjust']} | {c['reject']} |")
     lines += [
         f"",
         f"## 0.941 entry R, accepted setups only",
@@ -347,7 +456,7 @@ def main():
     svc = DB1TradingViewSyncService()
     ctx = svc._detect_chart_time_context(driver)
     driver.execute_script(REMOVE_VOLUME_JS)
-    driver.execute_script(INJECT_PANEL_JS)
+    driver.execute_script(ADA_INJECT_PANEL_JS)
     driver.execute_script("window.__reviewSeq = 0; window.__reviewAction = null;")
     driver.execute_cdp_cmd("Page.bringToFront", {})
 
@@ -400,9 +509,14 @@ def main():
                     i -= 1; show(i)
                 else:
                     show(i, extra="<i>(at first setup)</i>")
-            elif act in ("accept", "reject"):
+            elif act in ("accept", "wrong_setup", "wrong_outcome"):
                 leg = setups[i]
-                verdict = VERDICT_ACCEPT if act == "accept" else VERDICT_REJECT
+                if act == "accept":
+                    verdict = VERDICT_ACCEPT      # W: all ok
+                elif act == "wrong_setup":
+                    verdict = VERDICT_ADJUST      # S then R: anchors wrong
+                else:                              # act == "wrong_outcome"
+                    verdict = VERDICT_REJECT      # S then F: outcome scoring wrong
                 label = make_label({
                     "parent_ts": leg["parent_ts"], "term_ts": leg["term_ts"],
                     "direction": leg["direction"],
