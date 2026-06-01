@@ -1,0 +1,439 @@
+#!/usr/bin/env python
+"""WSAD-driven TradingView review of ADA 15m setups in the last 3 months.
+
+End-to-end:
+  1. Loads data/discovery_bet_1/binance_adausdt_15m_full_history.csv
+  2. Detects clean swing legs at 6c / 2.0x ATR (project default for 15m).
+  3. Filters to the last 3 months (calendar window, anchored to TODAY).
+  4. Connects to debug Chrome on :9222 (run scripts/tv-login.sh first if not up).
+  5. Navigates the active tab to BITGET:ADAUSDT.P @ 15m and waits for bars.
+  6. Injects the floating WSAD review panel onto the chart and walks through
+     each setup, auto-panning to it, scoring it against the 0.941 entry regime.
+  7. Verdicts append to data/discovery_bet_1/human_labels.jsonl with the
+     'asset':'ADA' marker so we can pivot the BTC vs ADA review streams later.
+  8. On exit (Enter or Ctrl-C), writes a Markdown session report to
+     artifacts/discovery_bet_1/manual_review_ada_15m/SESSION_<ts>.md
+     summarising verdicts, per-cohort breakdown, and the 0.941 R-rollup.
+
+Usage:
+  ./scripts/tv-ada.sh            # canonical wrapper -- recommended
+  PYTHONPATH=. .venv/bin/python scripts/tv_review_ada_15m.py
+"""
+from __future__ import annotations
+
+import csv
+import json
+import sys
+import time
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from selenium import webdriver
+from selenium.common.exceptions import WebDriverException
+from selenium.webdriver.chrome.options import Options
+
+from apps.worker.discovery_bet_1.atr import calculate_atr14
+from apps.worker.discovery_bet_1.human_labels import (
+    VERDICT_ACCEPT,
+    VERDICT_REJECT,
+    append_label,
+    make_label,
+)
+from apps.worker.discovery_bet_1.pivots import detect_local_pivots
+from apps.worker.discovery_bet_1.swing_detector import clean_legs as _clean_legs
+from apps.worker.discovery_bet_1.types import Candle
+from scripts.build_dashboard import KIND
+from scripts.execute_fib_strategy import execute
+from scripts.place_fibs_tradingview import (
+    PLACE_FIB_JS,
+    REMOVE_VOLUME_JS,
+)
+from scripts.review_fibs_tradingview import (
+    CLEAR_JS,
+    INJECT_PANEL_JS,
+    NAVIGATE_TO_FIB_JS,
+    REAPPLY_NAMES_JS,
+    _info_html,
+)
+from apps.api.db1_review_tradingview.service import (
+    DB1TradingViewSyncService,
+    TradingViewMarketContract,
+    TradingViewReviewStructure,
+    TradingViewSyncRequest,
+    _build_expected_line_tool_points,
+)
+from apps.worker.discovery_bet_1.types import PivotKind
+
+# --- ADA 15m config ---
+SYMBOL = "BITGET:ADAUSDT.P"
+TV_INTERVAL = "15"
+CHART_URL = f"https://www.tradingview.com/chart/?symbol=BITGET%3AADAUSDT.P&interval={TV_INTERVAL}"
+CSV_PATH = REPO_ROOT / "data/discovery_bet_1/binance_adausdt_15m_full_history.csv"
+MIN_BARS = 6
+ATR_MULT = 2.0
+DEBUG_PORT = 9222
+
+OUT_DIR = REPO_ROOT / "artifacts/discovery_bet_1/manual_review_ada_15m"
+LABELS_PATH = REPO_ROOT / "data/discovery_bet_1/human_labels.jsonl"
+
+
+def load_csv(path: Path) -> list[Candle]:
+    out: list[Candle] = []
+    with path.open(encoding="utf-8") as fh:
+        for row in csv.DictReader(fh):
+            out.append(Candle(row["source_timestamp"], float(row["open"]),
+                              float(row["high"]), float(row["low"]),
+                              float(row["close"]), float(row["volume"])))
+    return out
+
+
+def attach_chrome():
+    """Attach to running debug Chrome. Errors with a clear hint if not up."""
+    opts = Options()
+    opts.add_experimental_option("debuggerAddress", f"127.0.0.1:{DEBUG_PORT}")
+    try:
+        return webdriver.Chrome(options=opts)
+    except WebDriverException as exc:
+        raise SystemExit(
+            f"No debug Chrome on 127.0.0.1:{DEBUG_PORT}. Run:\n"
+            f"  ./scripts/tv-login.sh\n"
+            f"first and log into TradingView, then re-run this script.\n"
+            f"(Underlying error: {exc})"
+        )
+
+
+def navigate_to_ada(driver):
+    """Navigate the active tab to ADA 15m, waiting for bars to load."""
+    print(f"  navigating to {CHART_URL}")
+    driver.get(CHART_URL)
+    print("  waiting 15s for chart to load + render bars...", flush=True)
+    time.sleep(15)
+
+
+def _request_for(leg):
+    """Same shape the place_fibs script uses for building TV LineTool points."""
+    pk: PivotKind = leg["parent_kind"]
+    tk: PivotKind = leg["term_kind"]
+    return TradingViewSyncRequest(
+        market_contract=TradingViewMarketContract(SYMBOL, "15M"),
+        structures=[TradingViewReviewStructure(
+            review_id=leg.get("id", "auto"),
+            parent_pivot_timestamp=leg["parent_ts"],
+            parent_pivot_kind=pk,
+            terminal_extreme_timestamp=leg["term_ts"],
+            terminal_extreme_kind=tk,
+            parent_pivot_price=leg["parent_price"],
+            terminal_extreme_price=leg["term_price"],
+        )],
+    )
+
+
+def place_one(driver, leg, name, ctx):
+    """Place a single Fib retracement on the chart, named for the Object Tree."""
+    req = _request_for({**leg, "name": name})
+    for tz in (ctx.effective_chart_timezone, "UTC"):
+        pts = _build_expected_line_tool_points(req, chart_time_zone=tz)
+        mapped = {
+            "parentPoint": {"price": pts[0]["price"], "time_t": pts[0]["time_t"]},
+            "terminalPoint": {"price": pts[1]["price"], "time_t": pts[1]["time_t"]},
+        }
+        result = driver.execute_script(PLACE_FIB_JS, mapped, TV_INTERVAL, name, True)
+        if isinstance(result, dict) and result.get("ok"):
+            return True
+    return False
+
+
+def navigate_to_fib(driver, leg):
+    """Auto-pan the chart so the current setup is centered + visible."""
+    try:
+        parent_epoch = int(datetime.fromisoformat(leg["parent_ts"]).replace(
+            tzinfo=ZoneInfo("UTC")).timestamp())
+        term_epoch = int(datetime.fromisoformat(leg["term_ts"]).replace(
+            tzinfo=ZoneInfo("UTC")).timestamp())
+        return driver.execute_script(NAVIGATE_TO_FIB_JS, parent_epoch, term_epoch)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def annotate_outcome(leg, candles, idx_map):
+    """Add the 0.941 entry outcome + R to the leg dict (drives the panel info)."""
+    try:
+        res = execute(candles, idx_map, leg)
+        kind = KIND.get(res["status"], "open")
+        leg["outcome_kind"] = kind
+        leg["outcome_r"] = res["r"]
+    except Exception:
+        leg["outcome_kind"] = "open"
+        leg["outcome_r"] = 0.0
+
+
+def annotate_span_depth(leg, idx_map, atr):
+    ti = idx_map.get(leg["term_ts"])
+    pi = idx_map.get(leg["parent_ts"])
+    if ti is None or pi is None:
+        return
+    leg["span_candles"] = abs(ti - pi)
+    a = atr[ti] or 1.0
+    leg["depth_atr"] = abs(leg["term_price"] - leg["parent_price"]) / a
+
+
+def cohort_for(depth_atr: float) -> str:
+    if depth_atr < 6: return "4-6"
+    if depth_atr < 8: return "6-8"
+    if depth_atr < 10: return "8-10"
+    if depth_atr < 12: return "10-12"
+    if depth_atr < 16: return "12-16"
+    return "16+"
+
+
+def write_session_report(setups, verdicts, started_at, ended_at, out_path):
+    """Markdown session report. Verdict counts + per-cohort breakdown + R rollup."""
+    from collections import Counter
+    n = len(verdicts)
+    verdict_counts = Counter(verdicts.values())
+    by_cohort = {}
+    for k, leg in enumerate(setups):
+        c = cohort_for(leg.get("depth_atr", 0))
+        by_cohort.setdefault(c, {"reviewed": 0, "accept": 0, "reject": 0, "skip": 0})
+        if k in verdicts:
+            by_cohort[c]["reviewed"] += 1
+            v = verdicts[k]
+            if v == VERDICT_ACCEPT: by_cohort[c]["accept"] += 1
+            elif v == VERDICT_REJECT: by_cohort[c]["reject"] += 1
+        else:
+            by_cohort[c]["skip"] += 1
+    # R-rollup over what the user APPROVED (those are the trades the user
+    # considers "real" -- their net R is the user-curated edge).
+    accepted_r = [setups[k].get("outcome_r", 0.0) for k, v in verdicts.items()
+                  if v == VERDICT_ACCEPT]
+    n_accept = len(accepted_r)
+    total_r = sum(accepted_r)
+    wins = sum(1 for r in accepted_r if r > 0.5)
+    losses = sum(1 for r in accepted_r if r <= -0.5)
+    scratches = n_accept - wins - losses
+    elapsed = (ended_at - started_at).total_seconds()
+    lines = [
+        f"# ADA 15m manual review session",
+        f"",
+        f"- **Started:** {started_at.isoformat(timespec='seconds')}",
+        f"- **Ended:**   {ended_at.isoformat(timespec='seconds')}",
+        f"- **Elapsed:** {elapsed:.0f}s ({elapsed/60:.1f} min)",
+        f"- **Symbol:**  {SYMBOL} @ {TV_INTERVAL}m",
+        f"- **Detector:** {MIN_BARS}c / {ATR_MULT}x ATR",
+        f"- **Window:**  last 3 months",
+        f"- **Total setups in window:** {len(setups)}",
+        f"- **Reviewed:** {n} / {len(setups)}  ({n/max(1,len(setups))*100:.0f}%)",
+        f"",
+        f"## Verdict counts",
+        f"",
+        f"| Verdict | Count |",
+        f"|---|---|",
+        f"| accept   | {verdict_counts.get(VERDICT_ACCEPT, 0)} |",
+        f"| reject   | {verdict_counts.get(VERDICT_REJECT, 0)} |",
+        f"| (skipped — no verdict) | {len(setups) - n} |",
+        f"",
+        f"## Per-cohort breakdown",
+        f"",
+        f"| Cohort (×ATR) | Total | Reviewed | Accepted | Rejected |",
+        f"|---|---|---|---|---|",
+    ]
+    for cohort, c in sorted(by_cohort.items()):
+        total = c["reviewed"] + c["skip"]
+        lines.append(f"| {cohort} | {total} | {c['reviewed']} | {c['accept']} | {c['reject']} |")
+    lines += [
+        f"",
+        f"## 0.941 entry R, accepted setups only",
+        f"",
+        f"- **Triggered:** {n_accept}",
+        f"- **Wins (R > +0.5):**  {wins}",
+        f"- **Scratches:**        {scratches}",
+        f"- **Losses (R < -0.5):** {losses}",
+        f"- **Total R:** {total_r:+.2f}",
+        f"- **Avg R / accepted trade:** {total_r / max(1, n_accept):+.3f}",
+        f"",
+        f"## Where verdicts went",
+        f"",
+        f"- File: `data/discovery_bet_1/human_labels.jsonl`",
+        f"- Each verdict tagged `asset=ADA`. Filter with `jq 'select(.asset==\"ADA\")'`.",
+    ]
+    out_path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def main():
+    if not CSV_PATH.exists():
+        raise SystemExit(f"missing {CSV_PATH}; run a long-history acquire first.")
+
+    print(f"==> loading {CSV_PATH.name}...", flush=True)
+    candles = load_csv(CSV_PATH)
+    idx_map = {c.source_timestamp: i for i, c in enumerate(candles)}
+    atr = calculate_atr14(candles)
+    pivots = detect_local_pivots(candles)
+
+    # Last 3 months from TODAY (not relative to the CSV's end -- the user wants
+    # CALENDAR last-3-months, and the CSV is updated to ~now).
+    cutoff_dt = datetime.now(timezone.utc) - timedelta(days=90)
+    cutoff = cutoff_dt.strftime("%Y-%m-%dT%H:%M:%S")
+    print(f"==> filtering to setups with parent_ts >= {cutoff}", flush=True)
+
+    legs = [l for l in _clean_legs(candles, atr, pivots,
+                                   min_bars=MIN_BARS, mult=ATR_MULT)
+            if l["term_ts"] in idx_map and l["parent_ts"] >= cutoff]
+    print(f"==> {len(legs)} clean legs in window")
+
+    for leg in legs:
+        annotate_span_depth(leg, idx_map, atr)
+        annotate_outcome(leg, candles, idx_map)
+
+    # Attach to running Chrome + navigate to ADA chart.
+    print("==> attaching to Chrome on :9222...", flush=True)
+    driver = attach_chrome()
+    if "tradingview.com/chart" not in driver.current_url \
+            or "ADAUSDT" not in driver.current_url.upper():
+        navigate_to_ada(driver)
+
+    # Read TV's actual loaded bar range + filter setups to those that fit.
+    print("==> reading TV's loaded bar range + filtering setups...", flush=True)
+    bar_range = driver.execute_script(
+        "const c=window._exposed_chartWidgetCollection;"
+        "if(!c) return null;"
+        "const d=c._activeChartWidgetModel.value().model().mainSeries().data();"
+        "const f=d.first(), l=d.last();"
+        "return {first: f && f.value[0], last: l && l.value[0], n: d.size()};"
+    )
+    if not (bar_range and bar_range.get("first") and bar_range.get("last")):
+        raise SystemExit("could not read TV bar range -- is the chart loaded?")
+    first_ep = int(bar_range["first"]); last_ep = int(bar_range["last"])
+    pad_secs = 60 * 60   # 60 minutes of margin
+    kept = []
+    for s in legs:
+        try:
+            p_ep = int(datetime.fromisoformat(s["parent_ts"]).replace(
+                tzinfo=ZoneInfo("UTC")).timestamp())
+            t_ep = int(datetime.fromisoformat(s["term_ts"]).replace(
+                tzinfo=ZoneInfo("UTC")).timestamp())
+        except Exception:
+            continue
+        if p_ep >= first_ep + pad_secs and t_ep <= last_ep:
+            kept.append(s)
+    if len(kept) < len(legs):
+        print(f"  TV loaded {bar_range['n']} bars; reviewing "
+              f"{len(kept)} of {len(legs)} setups in that window.")
+    if not kept:
+        raise SystemExit("no setups fall in TV's loaded bar range -- scroll left in TV first.")
+    setups = kept
+
+    # Number them for the panel/object tree.
+    for i, leg in enumerate(setups, start=1):
+        leg["id"] = f"auto{i}"
+
+    # Inject panel + reset action state
+    print(f"==> injecting WSAD panel + starting review ({len(setups)} setups)...", flush=True)
+    svc = DB1TradingViewSyncService()
+    ctx = svc._detect_chart_time_context(driver)
+    driver.execute_script(REMOVE_VOLUME_JS)
+    driver.execute_script(INJECT_PANEL_JS)
+    driver.execute_script("window.__reviewSeq = 0; window.__reviewAction = null;")
+    driver.execute_cdp_cmd("Page.bringToFront", {})
+
+    verdicts = {}      # setup_index -> verdict string
+    started_at = datetime.now(timezone.utc)
+
+    def show(i, extra=""):
+        leg = setups[i]
+        # Single fib at a time -- match the BTC review's UX.
+        driver.execute_script(CLEAR_JS)
+        place_one(driver, leg, f"auto{i+1} << REVIEWING >> {i+1}/{len(setups)}", ctx)
+        time.sleep(0.25)
+        driver.execute_script(REAPPLY_NAMES_JS)
+        nav = navigate_to_fib(driver, leg)
+        if not (isinstance(nav, dict) and nav.get("ok")):
+            print(f"  navigate warning: {nav}", file=sys.stderr)
+        # Update the floating panel's status text
+        driver.execute_script(
+            "window.__reviewStatus(arguments[0], arguments[1]);",
+            f"ADA 15m Review  {i + 1}/{len(setups)}",
+            _info_html(i, len(setups), leg, extra,
+                       verdict=verdicts.get(i)),
+        )
+
+    i = 0
+    last_seq = 0
+    show(i)
+    print("==> Panel ready. Press W/S/A/D/Enter in the TV chart window.", flush=True)
+    print("    Verdicts append to data/discovery_bet_1/human_labels.jsonl.", flush=True)
+    print("    Ctrl-C here to end early (still writes a session report).", flush=True)
+
+    try:
+        while True:
+            action = driver.execute_script("return window.__reviewAction;")
+            seq = action.get("seq", 0) if isinstance(action, dict) else 0
+            if seq <= last_seq:
+                time.sleep(0.4)
+                continue
+            last_seq = seq
+            act = action.get("action") if isinstance(action, dict) else None
+            if act == "done":
+                break
+            elif act == "next":
+                if i + 1 < len(setups):
+                    i += 1; show(i)
+                else:
+                    show(i, extra="<i>(at last setup)</i>")
+            elif act == "back":
+                if i > 0:
+                    i -= 1; show(i)
+                else:
+                    show(i, extra="<i>(at first setup)</i>")
+            elif act in ("accept", "reject"):
+                leg = setups[i]
+                verdict = VERDICT_ACCEPT if act == "accept" else VERDICT_REJECT
+                label = make_label({
+                    "parent_ts": leg["parent_ts"], "term_ts": leg["term_ts"],
+                    "direction": leg["direction"],
+                    "parent_price": float(leg["parent_price"]),
+                    "term_price": float(leg["term_price"]),
+                }, verdict, detector_params={
+                    "source": "tv_review_ada_15m",
+                    "asset": "ADA",
+                    "interval": "15m",
+                    "min_bars": MIN_BARS,
+                    "mult": ATR_MULT,
+                })
+                append_label(label, path=LABELS_PATH)
+                verdicts[i] = verdict
+                # Auto-advance to next on a verdict
+                if i + 1 < len(setups):
+                    i += 1; show(i)
+                else:
+                    show(i, extra=f"<i>recorded: {verdict}. last setup.</i>")
+    except KeyboardInterrupt:
+        print("\n==> Ctrl-C received -- writing session report...")
+    finally:
+        ended_at = datetime.now(timezone.utc)
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+        ts = ended_at.strftime("%Y%m%dT%H%M%S")
+        report_path = OUT_DIR / f"SESSION_{ts}.md"
+        write_session_report(setups, verdicts, started_at, ended_at, report_path)
+        print(f"==> session report: {report_path}")
+        print(f"==> labels appended to: {LABELS_PATH}")
+        # Best-effort: clear the review panel and leave the chart usable.
+        try:
+            driver.execute_script(
+                "const p=document.getElementById('db1rv-panel');"
+                "if(p) p.remove();"
+                "if(window.__reviewKeyHandler){"
+                "  document.removeEventListener('keydown', window.__reviewKeyHandler, true);"
+                "  window.__reviewKeyHandler = null; }"
+            )
+            driver.execute_script(CLEAR_JS)
+        except Exception:
+            pass
+
+
+if __name__ == "__main__":
+    main()
