@@ -116,20 +116,22 @@ def navigate_to_ada(driver):
 
 
 def _request_for(leg):
-    """Same shape the place_fibs script uses for building TV LineTool points."""
-    pk: PivotKind = leg["parent_kind"]
-    tk: PivotKind = leg["term_kind"]
+    """Build a TradingViewSyncRequest matching the dataclass schema in
+    apps.api.db1_review_tradingview.service (singular review_structure,
+    structure_id not review_id, anchor_* not pivot_*).
+    """
     return TradingViewSyncRequest(
         market_contract=TradingViewMarketContract(SYMBOL, "15M"),
-        structures=[TradingViewReviewStructure(
-            review_id=leg.get("id", "auto"),
-            parent_pivot_timestamp=leg["parent_ts"],
-            parent_pivot_kind=pk,
-            terminal_extreme_timestamp=leg["term_ts"],
-            terminal_extreme_kind=tk,
-            parent_pivot_price=leg["parent_price"],
+        review_structure=TradingViewReviewStructure(
+            structure_id=str(leg.get("name") or leg.get("id", "auto")),
+            direction=leg["direction"],
+            parent_anchor_source_timestamp=leg["parent_ts"],
+            parent_anchor_price=leg["parent_price"],
+            parent_anchor_kind=leg["parent_kind"],
+            terminal_extreme_source_timestamp=leg["term_ts"],
             terminal_extreme_price=leg["term_price"],
-        )],
+            terminal_extreme_kind=leg["term_kind"],
+        ),
     )
 
 
