@@ -120,20 +120,37 @@ def navigate_to_ada(driver):
     time.sleep(15)
 
 
+def _utc_iso(ts: str) -> str:
+    """Tag a naive ISO timestamp as UTC so _source_timestamp_to_epoch_seconds
+    takes the 'has tzinfo' branch (astimezone-to-UTC) instead of the broken
+    'no tzinfo' branch that REPLACES the timezone with the chart's local TZ.
+
+    The CSV is from Binance public REST -- timestamps are UTC epochs but
+    stored as naive ISO strings. Without this tag, a Vienna-localized
+    chart_time_zone shifts every anchor 2 hours earlier on every setup.
+    """
+    if "+" in ts or ts.endswith("Z"):
+        return ts
+    return ts + "+00:00"
+
+
 def _request_for(leg):
     """Build a TradingViewSyncRequest matching the dataclass schema in
     apps.api.db1_review_tradingview.service (singular review_structure,
     structure_id not review_id, anchor_* not pivot_*).
+
+    Timestamps get an explicit UTC tag so the chart_time_zone naive-handling
+    branch doesn't silently shift our anchors into the chart's local time.
     """
     return TradingViewSyncRequest(
         market_contract=TradingViewMarketContract(SYMBOL, "15M"),
         review_structure=TradingViewReviewStructure(
             structure_id=str(leg.get("name") or leg.get("id", "auto")),
             direction=leg["direction"],
-            parent_anchor_source_timestamp=leg["parent_ts"],
+            parent_anchor_source_timestamp=_utc_iso(leg["parent_ts"]),
             parent_anchor_price=leg["parent_price"],
             parent_anchor_kind=leg["parent_kind"],
-            terminal_extreme_source_timestamp=leg["term_ts"],
+            terminal_extreme_source_timestamp=_utc_iso(leg["term_ts"]),
             terminal_extreme_price=leg["term_price"],
             terminal_extreme_kind=leg["term_kind"],
         ),
