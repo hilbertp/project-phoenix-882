@@ -62,6 +62,13 @@ from scripts.review_fibs_tradingview import (
     _annotate_span_depth,
     _info_html,
 )
+import scripts.review_fibs_tradingview as _rf
+
+# Override the shared DETECTOR_PARAMS so the panel's gate-check line (rendered
+# by _info_html) shows our ADA-specific thresholds. _info_html resolves the
+# constants via the module's namespace, so mutating the dict here is enough.
+_rf.DETECTOR_PARAMS["min_bars"] = 6
+_rf.DETECTOR_PARAMS["atr_mult"] = 2.0
 from apps.api.db1_review_tradingview.service import (
     DB1TradingViewSyncService,
     TradingViewMarketContract,
