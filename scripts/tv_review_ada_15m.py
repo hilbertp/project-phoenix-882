@@ -523,11 +523,14 @@ def main():
     atr = calculate_atr14(candles)
     pivots = detect_local_pivots(candles)
 
-    # Last 3 months from TODAY (not relative to the CSV's end -- the user wants
-    # CALENDAR last-3-months, and the CSV is updated to ~now).
-    cutoff_dt = datetime.now(timezone.utc) - timedelta(days=90)
+    # Detection window: last 4 weeks. TV's free-tier 15m caps history below
+    # ~3 months on a fresh session, so detecting 90 days of setups only to
+    # discard 80% in the bar-range filter is wasteful. 4 weeks gives a clean
+    # ~2700-bar target that TV can actually serve, and ~80-120 triggered
+    # setups (enough for a meaningful review, not so many it's a chore).
+    cutoff_dt = datetime.now(timezone.utc) - timedelta(weeks=4)
     cutoff = cutoff_dt.strftime("%Y-%m-%dT%H:%M:%S")
-    print(f"==> filtering to setups with parent_ts >= {cutoff}", flush=True)
+    print(f"==> filtering to setups with parent_ts >= {cutoff} (last 4 weeks)", flush=True)
 
     legs = [l for l in _clean_legs(candles, atr, pivots,
                                    min_bars=MIN_BARS, mult=ATR_MULT)
@@ -570,41 +573,48 @@ def main():
     else:
         print("  already on ADA 15m chart; not re-navigating.")
 
-    # Page in as much history as TV will give us via requestMoreHistoryPoints.
-    # We do NOT click the '3M' date-range tab -- that's right for the 1H BTC
-    # flow (3M ~ 2000 bars, easy load) but on 15m the same button asks TV for
-    # ~8640 bars and on a free session TV just stops paging earlier. Better
-    # to ask page-by-page and use whatever we get. The cutoff window auto-
-    # narrows to match TV's actual earliest bar -- no setups get silently
-    # dropped, you just review whatever fits.
-    print("==> paging in history with requestMoreHistoryPoints "
-          "(stops when TV stops giving more)...", flush=True)
+    # Target: ~4 weeks of 15m bars = 2688. Reasonable for free TV on 15m,
+    # gives us a meaningful review window without fighting TV's caps.
+    #
+    # Strategy: combine TWO history-loading APIs from TV's internal model:
+    #   - timeScale.requestMoreHistoryPoints()   pages older bars
+    #   - timeScale.scrollToFirstBar()           jumps to earliest loaded,
+    #                                            which often forces a page
+    # We alternate them and wait 2s between rounds (history fetch is async).
+    TARGET_BARS = 4 * 7 * 24 * 4   # 4 weeks of 15m = 2688
+    print(f"==> paging in TV history (target {TARGET_BARS} bars = ~4 weeks of 15m)...",
+          flush=True)
     last_n = -1
     stagnant_streak = 0
-    for attempt in range(30):
+    for attempt in range(25):
         n = driver.execute_script(
             "const c=window._exposed_chartWidgetCollection;"
             "if(!c) return 0;"
             "return c._activeChartWidgetModel.value().model().mainSeries().data().size();"
         ) or 0
+        if n >= TARGET_BARS:
+            print(f"  loaded {n} bars (target {TARGET_BARS}), proceeding.")
+            break
         if n == last_n:
             stagnant_streak += 1
-            if stagnant_streak >= 3:
-                print(f"  TV stopped paging at {n} bars (3 attempts no growth); proceeding.")
+            if stagnant_streak >= 8:
+                print(f"  TV stopped paging at {n} bars (8 stagnant attempts); "
+                      f"proceeding with what we have.")
                 break
         else:
             stagnant_streak = 0
-        # Ask for more.
+        # Two-pronged ask: request more + scroll-to-first (both trigger paging).
         driver.execute_script(
             "const c=window._exposed_chartWidgetCollection;"
             "if(c){const ts=c._activeChartWidgetModel.value().model().timeScale();"
-            "if(ts.requestMoreHistoryPoints) ts.requestMoreHistoryPoints();}"
+            "if(ts.requestMoreHistoryPoints) ts.requestMoreHistoryPoints();"
+            "if(ts.scrollToFirstBar) ts.scrollToFirstBar();}"
         )
-        if attempt % 5 == 0:
-            print(f"  attempt {attempt + 1}: {n} bars loaded.", flush=True)
+        if attempt % 3 == 0:
+            print(f"  attempt {attempt + 1:2}: {n} bars so far...", flush=True)
         last_n = n
-        time.sleep(0.8)
-    print(f"  finished paging; {n} bars loaded.", flush=True)
+        time.sleep(2.0)
+    print(f"  paging finished; {n} bars loaded.", flush=True)
 
     # Now read TV's actual loaded bar range + filter setups to those that fit.
     print("==> reading TV's loaded bar range + filtering setups...", flush=True)
