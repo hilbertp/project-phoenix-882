@@ -90,7 +90,9 @@ ADA_INJECT_PANEL_JS = r"""
   if (existing) existing.remove();
   const p = document.createElement('div');
   p.id = 'db1rv-panel';
-  p.style.cssText = 'position:fixed;top:90px;right:18px;z-index:2147483647;background:#1e222d;color:#fff;padding:10px;border-radius:8px;font:12px -apple-system,sans-serif;box-shadow:0 2px 14px rgba(0,0,0,.6);width:320px';
+  // Position on the LEFT side (past the ~60px drawing-tools toolbar) so the
+  // panel never hides behind TV's right-side Object Tree / Data Window pane.
+  p.style.cssText = 'position:fixed;top:90px;left:80px;z-index:2147483647;background:#1e222d;color:#fff;padding:10px;border-radius:8px;font:12px -apple-system,sans-serif;box-shadow:0 2px 14px rgba(0,0,0,.6);width:320px';
   function btn(label, act, bg, title){
     return '<button data-act="'+act+'" title="'+(title||'')+'" '+
       'style="margin:2px;padding:7px 10px;border:0;border-radius:4px;cursor:pointer;background:'+bg+';color:#fff;font-size:12px">'+label+'</button>';
