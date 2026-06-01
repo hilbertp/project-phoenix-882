@@ -52,6 +52,14 @@ else
 fi
 
 echo
+echo "==> Refreshing ADA 15m data (Binance public REST)..."
+echo "    Without this, the CSV's last bar can be days stale while TV shows"
+echo "    today's bars, so the bar-range filter produces zero setups."
+env PYTHONPATH="$REPO_ROOT" "$VENV_PY" "$SCRIPT_DIR/acquire_long_asset.py" \
+  ADAUSDT 15m 2>&1 | tail -3 || \
+  echo "    (warning: data refresh failed; continuing with whatever's on disk)"
+
+echo
 echo "==> Starting ADA 15m WSAD review (last 3 months)..."
 echo "    Switch to your TradingView Chrome window. Use:"
 echo "      W/Up=approve   S/Down=reject   A/Left=prev   D/Right=next   Enter=done"
