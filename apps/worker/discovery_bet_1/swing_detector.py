@@ -67,6 +67,48 @@ def clean_legs(
             direction = 1
             cur_hi, cur_hi_i = c.high, i
 
+    # ------------------------------------------------------------------ #
+    # Pivot refinement (swing-correction): re-anchor each pivot to the
+    # true extreme bar within [prev_pivot+1, next_pivot).
+    #
+    # Why this exists: the zigzag walk fires a pivot the moment the
+    # ATR*mult retracement threshold is met. If the trend then *resumes*
+    # to a more extreme bar (a common "fake-out" pattern), the new
+    # extreme is NOT recognized -- the `direction != -1` guards on the
+    # walk-loop's cur_hi/cur_lo updates block it. The result is a pivot
+    # locked at the premature trigger bar, a few candles to the left of
+    # the visual extreme.
+    #
+    # The fix: after the walk, for every pivot scan the bars between
+    # its neighbors and snap the pivot to the actual extreme. This
+    # never crosses a neighbor, so pivot ordering is preserved.
+    # ------------------------------------------------------------------ #
+    if len(piv) >= 2:
+        refined: list[tuple[int, float, str]] = []
+        for j, (pi, pp, pk) in enumerate(piv):
+            lo = (refined[-1][0] + 1) if refined else 0
+            hi = piv[j + 1][0] if j + 1 < len(piv) else min(pi + 1, n)
+            if lo >= hi:
+                refined.append((pi, pp, pk))
+                continue
+            if pk == "high":
+                # `>=` (not `>`) so among tied-extreme bars (flat top resistance)
+                # the LATEST one wins. The walk uses strict `>` which biases the
+                # anchor to the EARLIEST tied bar -- producing the user-visible
+                # "anchor a few candles to the left of the visual extreme."
+                best_i, best_p = pi, pp
+                for k in range(lo, hi):
+                    if candles[k].high >= best_p:
+                        best_p, best_i = candles[k].high, k
+            else:  # "low"
+                # Same logic for lows: `<=` lets the LATEST tied-low bar win.
+                best_i, best_p = pi, pp
+                for k in range(lo, hi):
+                    if candles[k].low <= best_p:
+                        best_p, best_i = candles[k].low, k
+            refined.append((best_i, best_p, pk))
+        piv = refined
+
     legs: list[dict] = []
     for (pi, pp, pk), (ti, tp, tk) in zip(piv, piv[1:]):
         if (ti - pi) < min_bars:
