@@ -15,6 +15,8 @@ Usage:
 """
 from __future__ import annotations
 
+import os
+import platform
 import sys
 import time
 from pathlib import Path
@@ -86,7 +88,49 @@ def _find_chrome_binary() -> str:
 
 
 CHROME_BINARY = _find_chrome_binary()
-PROFILE_DIR = REPO_ROOT / ".chrome-tv-manual"
+
+
+def _real_chrome_profile_dir() -> Path:
+    """Return the OS-default Chrome profile dir (where TradingView is already
+    logged in for the user's regular browsing).
+
+    Override with the PHOENIX_CHROME_PROFILE env var (absolute path).
+    """
+    override = os.environ.get("PHOENIX_CHROME_PROFILE")
+    if override:
+        return Path(override).expanduser()
+    sys_name = platform.system()
+    if sys_name == "Darwin":
+        return Path.home() / "Library" / "Application Support" / "Google" / "Chrome"
+    if sys_name == "Linux":
+        return Path.home() / ".config" / "google-chrome"
+    if sys_name == "Windows":
+        return Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data"
+    raise SystemExit(f"Unsupported OS for real Chrome profile: {sys_name}")
+
+
+def _resolve_profile_dir() -> Path:
+    """Pick which Chrome profile dir to use for the debug session.
+
+    Default: the user's real Chrome profile, so the TradingView login they
+    already have in their main browser is inherited (no re-login needed).
+
+    Opt out with PHOENIX_USE_DEDICATED_PROFILE=1 to use the old isolated
+    .chrome-tv-manual profile (handy for headless CI or when you don't want
+    the automation tab to share state with your real browsing).
+    """
+    if os.environ.get("PHOENIX_USE_DEDICATED_PROFILE") in ("1", "true", "yes"):
+        return REPO_ROOT / ".chrome-tv-manual"
+    real = _real_chrome_profile_dir()
+    if real.exists():
+        return real
+    # Real profile doesn't exist (user never opened Chrome on this machine).
+    # Fall back to the dedicated profile so the user can log in there.
+    return REPO_ROOT / ".chrome-tv-manual"
+
+
+PROFILE_DIR = _resolve_profile_dir()
+USING_REAL_PROFILE = PROFILE_DIR == _real_chrome_profile_dir()
 DEBUG_PORT = 9222
 SYMBOL = "BITGET:BTCUSDT.P"
 CHART_URL = "https://www.tradingview.com/chart/?symbol=BITGET%3ABTCUSDT.P&interval=60"
@@ -311,11 +355,62 @@ def main() -> None:
     # `login` mode bypasses selenium entirely: selenium-managed chromedriver
     # ignores our --remote-debugging-port=9222 flag and binds its own random
     # port, so the placement step can never attach. Spawn Chrome directly via
-    # subprocess and let the user log in. The next non-login invocation uses
-    # the same .chrome-tv-manual profile and attaches to 9222 cleanly.
+    # subprocess and let the user log in (or use their existing login). The
+    # next non-login invocation uses the same profile and attaches to 9222.
     if mode == "login":
         import subprocess as _sp
         PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+
+        # If we're using the real Chrome profile, any already-running Chrome
+        # process holds an exclusive lock on the user-data-dir. We must quit
+        # it before spawning the debug instance, or Chrome will silently
+        # surface the existing window WITHOUT binding port 9222.
+        if USING_REAL_PROFILE:
+            sys_name = platform.system()
+            try:
+                if sys_name == "Darwin":
+                    running = _sp.run(
+                        ["pgrep", "-x", "Google Chrome"],
+                        capture_output=True, text=True
+                    ).stdout.strip()
+                else:
+                    running = _sp.run(
+                        ["pgrep", "-x", "chrome"],
+                        capture_output=True, text=True
+                    ).stdout.strip()
+            except FileNotFoundError:
+                running = ""
+            if running:
+                print(f"==> Chrome is open with your real profile ({PROFILE_DIR}).")
+                print("    Quitting it cleanly so I can re-launch with debug port "
+                      f":{DEBUG_PORT}.")
+                print("    Your tabs/session will be restored next time you open "
+                      "Chrome normally.")
+                if sys_name == "Darwin":
+                    _sp.run([
+                        "osascript", "-e",
+                        'tell application "Google Chrome" to quit'
+                    ], check=False)
+                else:
+                    _sp.run(["pkill", "-x", "chrome"], check=False)
+                # Wait up to 8s for Chrome to fully shut down + release the
+                # user-data-dir lock.
+                for _ in range(16):
+                    time.sleep(0.5)
+                    check = _sp.run(
+                        ["pgrep", "-x",
+                         "Google Chrome" if sys_name == "Darwin" else "chrome"],
+                        capture_output=True, text=True
+                    ).stdout.strip()
+                    if not check:
+                        break
+                else:
+                    raise SystemExit(
+                        "Chrome refused to quit within 8s. Quit it manually "
+                        "(Cmd+Q on macOS) and re-run."
+                    )
+                print("    Chrome quit cleanly. Spawning debug instance...")
+
         chrome_cmd = [
             CHROME_BINARY,
             f"--remote-debugging-port={DEBUG_PORT}",
@@ -327,8 +422,14 @@ def main() -> None:
         ]
         _sp.Popen(chrome_cmd, stdin=_sp.DEVNULL, stdout=_sp.DEVNULL,
                   stderr=_sp.DEVNULL, start_new_session=True)
-        print(f"Spawned Chrome with debug port {DEBUG_PORT} + profile {PROFILE_DIR}.")
-        print("Log in with the Email option, then re-run without 'login' to place setups.")
+        profile_label = "your real Chrome profile" if USING_REAL_PROFILE else \
+                        f"dedicated profile {PROFILE_DIR}"
+        print(f"Spawned Chrome with debug port {DEBUG_PORT} + {profile_label}.")
+        if USING_REAL_PROFILE:
+            print("Your existing TradingView login is inherited -- no re-login needed.")
+            print("Set PHOENIX_USE_DEDICATED_PROFILE=1 to use the isolated profile instead.")
+        else:
+            print("Log in with the Email option, then re-run without 'login' to place setups.")
         return
 
     driver, attached = _make_driver(launch_if_missing=False)
