@@ -92,6 +92,53 @@ OUT_DIR = REPO_ROOT / "artifacts/discovery_bet_1/manual_review_btc_1h_month"
 LABELS_PATH = REPO_ROOT / "data/discovery_bet_1/human_labels.jsonl"
 
 
+LOADING_OVERLAY_JS = r"""
+const existing = document.getElementById('db1rv-loading');
+if (existing) existing.remove();
+const div = document.createElement('div');
+div.id = 'db1rv-loading';
+div.style.cssText = (
+    'position:fixed; top:120px; right:6px; z-index:99999;' +
+    'background:#0d1117; color:#e6edf3;' +
+    'border:1px solid #30363d; border-radius:6px;' +
+    'padding:10px 12px; font:13px -apple-system,Segoe UI,sans-serif;' +
+    'width:260px; box-shadow:0 4px 12px rgba(0,0,0,0.5);'
+);
+const title = document.createElement('div');
+title.style.cssText = 'font-weight:600; margin-bottom:4px; color:#7d8590;';
+title.textContent = 'Phoenix Review (loading)';
+const text = document.createElement('div');
+text.id = 'db1rv-loading-text';
+text.textContent = arguments[0] || 'Initializing...';
+div.appendChild(title);
+div.appendChild(text);
+document.body.appendChild(div);
+return true;
+"""
+
+UPDATE_LOADING_JS = r"""
+const el = document.getElementById('db1rv-loading-text');
+if (el) { el.textContent = arguments[0]; return true; }
+return false;
+"""
+
+REMOVE_LOADING_JS = r"""
+const el = document.getElementById('db1rv-loading');
+if (el) el.remove();
+return true;
+"""
+
+
+def _loading(driver, text: str) -> None:
+    """Inject (or update) the on-chart loading badge. Silent on failure --
+    the panel still works without it; this is purely UX feedback."""
+    try:
+        if not driver.execute_script(UPDATE_LOADING_JS, text):
+            driver.execute_script(LOADING_OVERLAY_JS, text)
+    except Exception:
+        pass
+
+
 def load_csv(path: Path) -> list[Candle]:
     out: list[Candle] = []
     with path.open(encoding="utf-8") as fh:
@@ -120,7 +167,13 @@ def navigate_to_btc(driver):
     print(f"  navigating to {CHART_URL}")
     driver.get(CHART_URL)
     print("  waiting 15s for chart to load + render bars...", flush=True)
-    time.sleep(15)
+    # Wait in 1s increments so the loading badge can be injected as soon as
+    # the document is ready, giving the user a visible heartbeat instead of
+    # a blank 15s of empty TV canvas.
+    for waited in range(1, 16):
+        time.sleep(1)
+        if waited >= 2:
+            _loading(driver, f"Loading TradingView chart ({15 - waited}s left)...")
 
 
 def _utc_iso(ts: str) -> str:
@@ -244,11 +297,13 @@ def main():
         navigate_to_btc(driver)
     else:
         print("  already on clean BTC 1H chart; not re-navigating.")
+        _loading(driver, "Chart already loaded. Paging in history...")
 
     # Page in enough history to cover the month (~720 bars + 200 margin)
     TARGET_BARS = 1000
     print(f"==> paging in TV history (target {TARGET_BARS} bars = ~6 weeks of 1H)...",
           flush=True)
+    _loading(driver, f"Paging in TV history (target {TARGET_BARS} bars)...")
     last_n = -1
     stagnant_streak = 0
     n = 0
@@ -276,10 +331,14 @@ def main():
         )
         if attempt % 3 == 0:
             print(f"  attempt {attempt + 1:2}: {n} bars so far...", flush=True)
+        _loading(driver,
+                 f"Paging TV history: {n}/{TARGET_BARS} bars "
+                 f"(attempt {attempt + 1}/25)...")
         last_n = n
         time.sleep(2.0)
 
     print("==> reading TV's loaded bar range + filtering setups...", flush=True)
+    _loading(driver, "Reading TV bar range + filtering setups...")
     bar_range = driver.execute_script(
         "const c=window._exposed_chartWidgetCollection;"
         "if(!c) return null;"
@@ -319,11 +378,17 @@ def main():
         leg["id"] = f"auto{i}"
 
     print(f"==> injecting WSAD panel + starting review ({len(setups)} setups)...", flush=True)
+    _loading(driver, f"Injecting review panel for {len(setups)} setups...")
     svc = DB1TradingViewSyncService()
     ctx = svc._detect_chart_time_context(driver)
     driver.execute_script(REMOVE_VOLUME_JS)
     inject_result = driver.execute_script(ADA_INJECT_PANEL_JS)
     print(f"  panel inject returned: {inject_result}", flush=True)
+    # Loading badge has done its job -- WSAD panel takes over the upper-right.
+    try:
+        driver.execute_script(REMOVE_LOADING_JS)
+    except Exception:
+        pass
     # Customize the panel title for BTC's month.
     driver.execute_script(
         "const t=document.getElementById('db1rv-title');"
