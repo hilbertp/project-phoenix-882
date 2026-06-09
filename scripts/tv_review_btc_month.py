@@ -464,8 +464,21 @@ def main():
         place_one(driver, leg, f"auto{i+1} << REVIEWING >> {i+1}/{len(setups)}", ctx)
         time.sleep(0.2)
         driver.execute_script(REAPPLY_NAMES_JS)
+        # Zoom to the setup. TV's fib-creation triggers an async re-render that
+        # can RESET the view AFTER our first zoom lands -- so we zoom, let the
+        # re-render settle, then zoom AGAIN. The second zoom sticks. Every nav
+        # is logged to stdout (the readable /tmp log) so we can diagnose
+        # without attaching selenium (which kills the shared browser).
         nav = navigate_to_fib(driver, leg)
-        if not (isinstance(nav, dict) and nav.get("ok")):
+        time.sleep(0.35)
+        nav = navigate_to_fib(driver, leg)
+        ok = isinstance(nav, dict) and nav.get("ok")
+        landed = isinstance(nav, dict) and nav.get("landed")
+        vis = nav.get("visible") if isinstance(nav, dict) else None
+        print(f"  show {i+1}/{len(setups)} {leg['parent_ts'][:16]} "
+              f"nav={nav.get('method') if isinstance(nav, dict) else nav} "
+              f"landed={landed} visible={vis}", flush=True)
+        if not ok:
             print(f"  navigate warning: {nav}", file=sys.stderr)
         driver.execute_script(
             "window.__reviewStatus(arguments[0], arguments[1]);",
@@ -491,9 +504,24 @@ def main():
     print("==> Panel ready. Press W/S/A/D/Enter in the TV chart window.", flush=True)
     print("    Verdicts append to data/discovery_bet_1/human_labels.jsonl.", flush=True)
 
+    consecutive_errors = 0
     try:
         while True:
-            action = driver.execute_script("return window.__reviewAction;")
+            # Resilient poll: a transient WebDriverException (TV re-render,
+            # momentary unresponsiveness) must NOT end the whole session.
+            # Catch, log, back off, and retry. Only give up if the browser is
+            # gone for many consecutive polls (genuinely closed/crashed).
+            try:
+                action = driver.execute_script("return window.__reviewAction;")
+                consecutive_errors = 0
+            except WebDriverException as exc:
+                consecutive_errors += 1
+                if consecutive_errors >= 40:  # ~20s of solid failure
+                    print(f"\n==> browser unreachable for {consecutive_errors} "
+                          f"polls; ending session. ({str(exc)[:80]})", flush=True)
+                    break
+                time.sleep(0.5)
+                continue
             seq = action.get("seq", 0) if isinstance(action, dict) else 0
             if seq <= last_seq:
                 time.sleep(0.15)

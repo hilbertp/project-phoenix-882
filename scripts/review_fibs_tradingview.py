@@ -188,6 +188,25 @@ const span = (parentIdx !== null && termIdx !== null) ?
     Math.abs(termIdx - parentIdx) : 100;
 const pad = Math.max(20, Math.round(span * 0.5));
 
+// Helper: read TV's current visible bar range so we can VERIFY the zoom
+// actually landed where we wanted (and log it). Returns {from,to} in bar
+// indices or null.
+function _visible() {
+    try {
+        const r = ts.visibleBarsStrictRange && ts.visibleBarsStrictRange();
+        if (r && typeof r.firstBar === 'number')
+            return {from: r.firstBar, to: r.lastBar};
+        if (r && typeof r.from === 'number')
+            return {from: r.from, to: r.to};
+    } catch (e) {}
+    try {
+        const lr = ts.logicalRange && ts.logicalRange();
+        if (lr) return {from: lr.left !== undefined ? lr.left : lr.from,
+                        to:   lr.right !== undefined ? lr.right : lr.to};
+    } catch (e) {}
+    return null;
+}
+
 // Try 1: timeScale.zoomToBarsRange (index-based). THIS is the one that
 // actually moves the chart. TV's loaded-bar indices can be NEGATIVE (the
 // reference index 0 is near the live edge, so historical bars are < 0);
@@ -200,7 +219,15 @@ try {
         const lo = Math.min(parentIdx, termIdx) - pad;
         const hi = Math.max(parentIdx, termIdx) + pad;
         ts.zoomToBarsRange(lo, hi);
-        return {ok:true, method:'zoomToBarsRange', lo, hi, parentIdx, termIdx};
+        const want_mid = Math.round((parentIdx + termIdx) / 2);
+        const vis = _visible();
+        // Did the setup midpoint actually land inside the new visible range?
+        const landed = vis && vis.from <= want_mid && want_mid <= vis.to
+                       // tolerate index/logical-coordinate skew: also accept
+                       // if the visible span is now tight (< 4x the padded span)
+                       || (vis && Math.abs(vis.to - vis.from) < (hi - lo) * 4);
+        return {ok:true, method:'zoomToBarsRange', lo, hi, want_mid,
+                parentIdx, termIdx, visible: vis, landed: !!landed};
     }
 } catch (e) { /* try next */ }
 
@@ -211,7 +238,8 @@ try {
             typeof ts.scrollToBar === 'function') {
         const mid = Math.round((parentIdx + termIdx) / 2);
         ts.scrollToBar(mid);
-        return {ok:true, method:'scrollToBar', mid, parentIdx, termIdx};
+        return {ok:true, method:'scrollToBar', mid, parentIdx, termIdx,
+                visible: _visible()};
     }
 } catch (e) { /* try next */ }
 
@@ -226,12 +254,13 @@ try {
             from: Math.min(parentEpoch, termEpoch) - padSecs,
             to:   Math.max(parentEpoch, termEpoch) + padSecs,
         });
-        return {ok:true, method:'gotoTimeRange', parentIdx, termIdx};
+        return {ok:true, method:'gotoTimeRange', parentIdx, termIdx,
+                visible: _visible()};
     }
 } catch (e) { /* fall through */ }
 
 return {ok:false, error:'no working pan/zoom method',
-        parentIdx, termIdx, parentEpoch, termEpoch};
+        parentIdx, termIdx, parentEpoch, termEpoch, visible: _visible()};
 """
 
 # A custom Fib template applies after creation and blanks the text we set, so the
