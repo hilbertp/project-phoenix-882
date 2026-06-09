@@ -90,47 +90,64 @@ def _find_chrome_binary() -> str:
 CHROME_BINARY = _find_chrome_binary()
 
 
-def _real_chrome_profile_dir() -> Path:
-    """Return the OS-default Chrome profile dir (where TradingView is already
-    logged in for the user's regular browsing).
+def _resolve_profile_dir() -> Path:
+    """Pick which Chrome profile dir to use for the debug session.
 
-    Override with the PHOENIX_CHROME_PROFILE env var (absolute path).
+    CRITICAL CONSTRAINT (why we do NOT use the user's real Chrome profile):
+    Chrome 136+ (May 2025) DELIBERATELY IGNORES --remote-debugging-port when
+    --user-data-dir points at the OS-default profile. This is a Google
+    security hardening against malware/automation attaching to a user's
+    real logged-in browser to steal their sessions. Verified live on Chrome
+    148: launching with the default profile + the debug flag leaves port
+    9222 unbound, so selenium can never attach. There is no flag to bypass
+    it -- it is intentional and permanent.
+
+    Therefore we MUST use a dedicated user-data-dir. To avoid forcing the
+    user to re-login on every fresh clone, the dedicated profile lives
+    OUTSIDE the repo at ~/.phoenix-chrome-tv (persists across clones and
+    `git clean`). The user logs into TradingView there exactly once; the
+    cookies persist in that dir forever after.
+
+    Override the location with PHOENIX_CHROME_PROFILE=/abs/path.
+    Legacy: an in-repo .chrome-tv-manual is auto-migrated on first use.
     """
     override = os.environ.get("PHOENIX_CHROME_PROFILE")
     if override:
         return Path(override).expanduser()
-    sys_name = platform.system()
-    if sys_name == "Darwin":
-        return Path.home() / "Library" / "Application Support" / "Google" / "Chrome"
-    if sys_name == "Linux":
-        return Path.home() / ".config" / "google-chrome"
-    if sys_name == "Windows":
-        return Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data"
-    raise SystemExit(f"Unsupported OS for real Chrome profile: {sys_name}")
 
+    persistent = Path.home() / ".phoenix-chrome-tv"
+    if persistent.exists():
+        return persistent
 
-def _resolve_profile_dir() -> Path:
-    """Pick which Chrome profile dir to use for the debug session.
-
-    Default: the user's real Chrome profile, so the TradingView login they
-    already have in their main browser is inherited (no re-login needed).
-
-    Opt out with PHOENIX_USE_DEDICATED_PROFILE=1 to use the old isolated
-    .chrome-tv-manual profile (handy for headless CI or when you don't want
-    the automation tab to share state with your real browsing).
-    """
-    if os.environ.get("PHOENIX_USE_DEDICATED_PROFILE") in ("1", "true", "yes"):
-        return REPO_ROOT / ".chrome-tv-manual"
-    real = _real_chrome_profile_dir()
-    if real.exists():
-        return real
-    # Real profile doesn't exist (user never opened Chrome on this machine).
-    # Fall back to the dedicated profile so the user can log in there.
-    return REPO_ROOT / ".chrome-tv-manual"
+    # First run on this machine: seed the persistent profile from a legacy
+    # in-repo .chrome-tv-manual if one exists (preserves an existing login),
+    # otherwise create an empty one for the user to log into once.
+    legacy = REPO_ROOT / ".chrome-tv-manual"
+    persistent.mkdir(parents=True, exist_ok=True)
+    if legacy.exists() and (legacy / "Default" / "Cookies").exists():
+        import shutil
+        for item in legacy.iterdir():
+            dest = persistent / item.name
+            if dest.exists():
+                continue
+            if item.is_dir():
+                shutil.copytree(item, dest, ignore_errors=True)
+            else:
+                try:
+                    shutil.copy2(item, dest)
+                except OSError:
+                    pass
+        # Drop stale singleton locks copied from the legacy profile.
+        for lock in ("SingletonLock", "SingletonSocket", "SingletonCookie"):
+            try:
+                (persistent / lock).unlink()
+            except OSError:
+                pass
+    return persistent
 
 
 PROFILE_DIR = _resolve_profile_dir()
-USING_REAL_PROFILE = PROFILE_DIR == _real_chrome_profile_dir()
+USING_REAL_PROFILE = False  # never the OS-default profile -- Chrome 136+ blocks debug there
 DEBUG_PORT = 9222
 SYMBOL = "BITGET:BTCUSDT.P"
 CHART_URL = "https://www.tradingview.com/chart/?symbol=BITGET%3ABTCUSDT.P&interval=60"

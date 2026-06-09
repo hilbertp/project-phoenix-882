@@ -188,7 +188,37 @@ const span = (parentIdx !== null && termIdx !== null) ?
     Math.abs(termIdx - parentIdx) : 100;
 const pad = Math.max(20, Math.round(span * 0.5));
 
-// Try 1: chartModel.gotoTimeRange (semantic, takes epoch seconds directly).
+// Try 1: timeScale.zoomToBarsRange (index-based). THIS is the one that
+// actually moves the chart. TV's loaded-bar indices can be NEGATIVE (the
+// reference index 0 is near the live edge, so historical bars are < 0);
+// zoomToBarsRange handles negatives fine. We must try this FIRST: the
+// epoch-based gotoTimeRange below returns silently-ok WITHOUT panning, so
+// if it ran first it would short-circuit and the chart would never move.
+try {
+    if (parentIdx !== null && termIdx !== null &&
+            typeof ts.zoomToBarsRange === 'function') {
+        const lo = Math.min(parentIdx, termIdx) - pad;
+        const hi = Math.max(parentIdx, termIdx) + pad;
+        ts.zoomToBarsRange(lo, hi);
+        return {ok:true, method:'zoomToBarsRange', lo, hi, parentIdx, termIdx};
+    }
+} catch (e) { /* try next */ }
+
+// Try 2: timeScale.scrollToBar (center on midpoint, don't zoom). Used when
+// we have indices but zoomToBarsRange is unavailable.
+try {
+    if (parentIdx !== null && termIdx !== null &&
+            typeof ts.scrollToBar === 'function') {
+        const mid = Math.round((parentIdx + termIdx) / 2);
+        ts.scrollToBar(mid);
+        return {ok:true, method:'scrollToBar', mid, parentIdx, termIdx};
+    }
+} catch (e) { /* try next */ }
+
+// Try 3: chartModel.gotoTimeRange (epoch-based). LAST resort only -- in
+// practice this returns ok without moving the view on current TV builds,
+// but we keep it as a final fallback for when the bar indices can't be
+// resolved (e.g. epoch/timezone mismatch leaves parentIdx/termIdx null).
 try {
     if (typeof chartModel.gotoTimeRange === 'function') {
         const padSecs = Math.max(3600, Math.abs(termEpoch - parentEpoch) * 0.5);
@@ -197,27 +227,6 @@ try {
             to:   Math.max(parentEpoch, termEpoch) + padSecs,
         });
         return {ok:true, method:'gotoTimeRange', parentIdx, termIdx};
-    }
-} catch (e) { /* try next */ }
-
-// Try 2: timeScale.zoomToBarsRange (needs bar indices in TV's loaded range)
-try {
-    if (parentIdx !== null && termIdx !== null &&
-            typeof ts.zoomToBarsRange === 'function') {
-        const lo = Math.min(parentIdx, termIdx) - pad;
-        const hi = Math.max(parentIdx, termIdx) + pad;
-        ts.zoomToBarsRange(lo, hi);
-        return {ok:true, method:'zoomToBarsRange', lo, hi};
-    }
-} catch (e) { /* try next */ }
-
-// Try 3: timeScale.scrollToBar (center on midpoint, don't zoom)
-try {
-    if (parentIdx !== null && termIdx !== null &&
-            typeof ts.scrollToBar === 'function') {
-        const mid = Math.round((parentIdx + termIdx) / 2);
-        ts.scrollToBar(mid);
-        return {ok:true, method:'scrollToBar', mid};
     }
 } catch (e) { /* fall through */ }
 
