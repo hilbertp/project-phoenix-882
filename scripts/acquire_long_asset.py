@@ -39,6 +39,23 @@ def fetch_chunk(symbol: str, interval: str, start_ms: int, end_ms: int):
         return json.loads(resp.read())
 
 
+def fetch_chunk_retry(symbol, interval, start_ms, end_ms, attempts=5):
+    """fetch_chunk with exponential backoff. A transient network blip or a
+    Binance 429 rate-limit must NOT abort the whole multi-year walk -- that's
+    what used to truncate the history mid-fetch and clobber the good CSV."""
+    last_exc = None
+    for attempt in range(attempts):
+        try:
+            return fetch_chunk(symbol, interval, start_ms, end_ms)
+        except Exception as exc:  # noqa: BLE001 - network errors are varied
+            last_exc = exc
+            wait = 1.5 * (2 ** attempt)  # 1.5, 3, 6, 12, 24s
+            print(f"  retry {attempt + 1}/{attempts} after {wait:.0f}s "
+                  f"({exc})", file=sys.stderr, flush=True)
+            time.sleep(wait)
+    raise last_exc
+
+
 def main() -> None:
     if len(sys.argv) < 2:
         print("usage: acquire_long_asset.py SYMBOL [INTERVAL]"); sys.exit(2)
@@ -60,13 +77,17 @@ def main() -> None:
     total = 0
     chunk_n = 0
     consecutive_empty = 0
+    fetch_incomplete = False
     while cur < end:
         chunk_start = int(cur.timestamp() * 1000)
         chunk_end = int((cur + chunk_span).timestamp() * 1000)
         try:
-            data = fetch_chunk(symbol, interval, chunk_start, chunk_end)
+            data = fetch_chunk_retry(symbol, interval, chunk_start, chunk_end)
         except Exception as exc:
+            # Even retries exhausted -> mark the fetch incomplete so the write
+            # step refuses to clobber a more-complete existing file.
             print(f"FETCH_ERROR {symbol} {interval} at {cur.date()}: {exc}", file=sys.stderr)
+            fetch_incomplete = True
             break
         if not data:
             cur = cur + chunk_span
@@ -85,15 +106,43 @@ def main() -> None:
         if chunk_n % 20 == 0:
             print(f"  {symbol} {interval} chunk {chunk_n}: {total} bars, at {cur.date()}", flush=True)
         time.sleep(0.1)
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    out.write_text("\n".join(rows) + "\n", encoding="utf-8")
-    if total:
-        first = rows[1].split(",")[0]; last = rows[-1].split(",")[0]
-        days = (datetime.fromisoformat(last) - datetime.fromisoformat(first)).days
-        print(f"WROTE {out}  symbol={symbol}  interval={interval}  "
-              f"rows={total}  span={days} days ({days/365.25:.1f} years)")
-    else:
+    if not total:
         print(f"NO_DATA {symbol} {interval}: nothing written")
+        return
+
+    new_last = rows[-1].split(",")[0]  # last timestamp we just fetched
+
+    # ANTI-CLOBBER GUARD: never replace a more-complete existing history with a
+    # shorter one. If the fetch ended early (FETCH_ERROR) and the new data does
+    # NOT reach at least as far as the file already on disk, KEEP the old file.
+    # This is the bug that wiped 77k rows (-> 2026) down to 34k (-> 2021) on a
+    # mid-fetch network blip and made the backtest non-reproducible.
+    if out.exists():
+        try:
+            existing_lines = out.read_text(encoding="utf-8").splitlines()
+            old_last = existing_lines[-1].split(",")[0] if len(existing_lines) > 1 else ""
+        except Exception:
+            old_last = ""
+        if old_last and new_last < old_last:
+            print(f"REFUSING_TO_CLOBBER {out.name}: new data ends {new_last} but "
+                  f"existing file already reaches {old_last}"
+                  f"{' (fetch was incomplete)' if fetch_incomplete else ''}. "
+                  f"Keeping the existing, more-complete file.", file=sys.stderr)
+            print(f"KEPT existing {out}  (had a longer history than this fetch)")
+            sys.exit(1)
+
+    # Atomic write: build a temp file, then replace -- so an interrupted write
+    # can never leave a half-written CSV in place of the real one.
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = out.with_suffix(out.suffix + ".tmp")
+    tmp.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    tmp.replace(out)
+
+    first = rows[1].split(",")[0]; last = new_last
+    days = (datetime.fromisoformat(last) - datetime.fromisoformat(first)).days
+    status = " (INCOMPLETE - fetch errored, but extended the history)" if fetch_incomplete else ""
+    print(f"WROTE {out}  symbol={symbol}  interval={interval}  "
+          f"rows={total}  span={days} days ({days/365.25:.1f} years){status}")
 
 
 if __name__ == "__main__":
