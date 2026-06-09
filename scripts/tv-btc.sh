@@ -41,6 +41,17 @@ if ! [[ "$MONTH" =~ ^[0-9]{4}-[0-9]{2}$ ]]; then
   exit 1
 fi
 
+# Kill any stale review process from a previous run BEFORE we start. Two
+# review processes attached to the same Chrome fight over the panel (the
+# setup index jumps, drawings flicker). Matching the exact script name is
+# safe -- it only ever targets this reviewer, never the user's other work.
+STALE=$(pgrep -f "tv_review_btc_month.py" || true)
+if [ -n "$STALE" ]; then
+  echo "==> Killing stale review process(es): $STALE"
+  pkill -f "tv_review_btc_month.py" || true
+  sleep 1
+fi
+
 chrome_alive() {
   curl -s --max-time 1 http://127.0.0.1:9222/json/version >/dev/null 2>&1
 }

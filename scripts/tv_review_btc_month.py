@@ -128,6 +128,45 @@ if (el) el.remove();
 return true;
 """
 
+# Keep the chart locked to BINANCE:BTCUSDT during a review. Two real ways the
+# user knocked the chart onto GOLD / Bitget (which silently breaks anchors,
+# since the CSV is Binance-spot OHLC):
+#   (a) clicking a symbol in the right-hand watchlist, and
+#   (b) typing a letter while the chart has focus -> TV's "symbol search" popup.
+# This hides the watchlist (CSS) and swallows stray printable keys (capture
+# keydown) so neither can happen. Panel keys (W/S/A/D/R/F/1/2/3/L/M/arrows/
+# Enter/Esc) are explicitly allowed through to the panel's own handler.
+SYMBOL_LOCK_JS = r"""
+try {
+  if (!document.getElementById('db1rv-symlock-css')) {
+    var st = document.createElement('style');
+    st.id = 'db1rv-symlock-css';
+    st.textContent =
+      '.widgetbar-wrap{display:none !important;}' +
+      '.layout__area--right{display:none !important;}';
+    document.head.appendChild(st);
+  }
+} catch (e) {}
+if (window.__symLockHandler) {
+  document.removeEventListener('keydown', window.__symLockHandler, true);
+}
+var __panelKeys = ['w','s','a','d','r','f','m','l','1','2','3',
+                   'arrowup','arrowdown','arrowleft','arrowright','enter','escape'];
+window.__symLockHandler = function(e){
+  var t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  var k = (e.key || '').toLowerCase();
+  // Block any single printable char that isn't a panel key -- those are what
+  // open TV's symbol-search popup. Modifiers / function keys (length > 1) pass.
+  if (__panelKeys.indexOf(k) === -1 && (e.key || '').length === 1) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }
+};
+document.addEventListener('keydown', window.__symLockHandler, true);
+return {ok:true, watchlist_hidden: !!document.getElementById('db1rv-symlock-css')};
+"""
+
 
 def _loading(driver, text: str) -> None:
     """Inject (or update) the on-chart loading badge. Silent on failure --
@@ -389,6 +428,13 @@ def main():
         driver.execute_script(REMOVE_LOADING_JS)
     except Exception:
         pass
+    # Lock the chart to BTC: hide watchlist + swallow stray keys so the symbol
+    # can't drift onto GOLD/Bitget mid-review (which silently breaks anchors).
+    try:
+        lock = driver.execute_script(SYMBOL_LOCK_JS)
+        print(f"  symbol-lock: {lock}", flush=True)
+    except Exception as exc:
+        print(f"  symbol-lock warning: {exc}", file=sys.stderr)
     # Customize the panel title for BTC's month.
     driver.execute_script(
         "const t=document.getElementById('db1rv-title');"
