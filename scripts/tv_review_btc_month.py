@@ -203,16 +203,29 @@ def attach_chrome():
 
 
 def navigate_to_btc(driver):
-    print(f"  navigating to {CHART_URL}")
+    print(f"  navigating to {CHART_URL}", flush=True)
     driver.get(CHART_URL)
-    print("  waiting 15s for chart to load + render bars...", flush=True)
-    # Wait in 1s increments so the loading badge can be injected as soon as
-    # the document is ready, giving the user a visible heartbeat instead of
-    # a blank 15s of empty TV canvas.
-    for waited in range(1, 16):
-        time.sleep(1)
-        if waited >= 2:
-            _loading(driver, f"Loading TradingView chart ({15 - waited}s left)...")
+    # POLL for readiness instead of sleeping a fixed 15s. Exit as soon as TV's
+    # chart API is exposed AND the main series has bars -- usually ~3-5s, not
+    # 15. Cap at 15s so a slow load still proceeds.
+    ready_js = (
+        "const c=window._exposed_chartWidgetCollection;"
+        "if(!c) return 0;"
+        "try{return c._activeChartWidgetModel.value().model()"
+        ".mainSeries().data().size();}catch(e){return 0;}"
+    )
+    for waited in range(1, 31):  # up to ~15s (0.5s steps)
+        time.sleep(0.5)
+        try:
+            n = driver.execute_script(ready_js) or 0
+        except Exception:
+            n = 0
+        if waited % 2 == 0:
+            _loading(driver, f"Loading TradingView chart... ({n} bars)")
+        if n >= 50:  # chart is up with real bars -- stop waiting
+            print(f"  chart ready after ~{waited * 0.5:.0f}s ({n} bars).", flush=True)
+            return
+    print("  chart load hit 15s cap; proceeding.", flush=True)
 
 
 def _utc_iso(ts: str) -> str:
@@ -338,22 +351,31 @@ def main():
         print("  already on clean BTC 1H chart; not re-navigating.")
         _loading(driver, "Chart already loaded. Paging in history...")
 
-    # Page in enough history to cover the month (~720 bars + 200 margin)
-    TARGET_BARS = 1000
-    print(f"==> paging in TV history (target {TARGET_BARS} bars = ~6 weeks of 1H)...",
-          flush=True)
-    _loading(driver, f"Paging in TV history (target {TARGET_BARS} bars)...")
+    # Page history back only until the requested MONTH is covered, then stop.
+    # Stopping on "first loaded bar <= a few days before month start" (instead
+    # of a blind 1000-bar target) makes this exit as soon as we actually have
+    # what we need -- the single biggest time saver after skipping the refresh.
+    month_start_ep = int(datetime.fromisoformat(cutoff_start).replace(
+        tzinfo=ZoneInfo("UTC")).timestamp())
+    need_back_to = month_start_ep - 3 * 24 * 3600  # 3-day margin before month
+    FIRST_BAR_JS = (
+        "const c=window._exposed_chartWidgetCollection;"
+        "if(!c) return [0,0];"
+        "try{const d=c._activeChartWidgetModel.value().model().mainSeries().data();"
+        "const f=d.first(); return [d.size(), (f&&f.value[0])||0];}catch(e){return [0,0];}"
+    )
+    print(f"==> paging TV history until {month_label} is covered...", flush=True)
+    _loading(driver, f"Paging TV history to cover {month_label}...")
     last_n = -1
     stagnant_streak = 0
-    n = 0
     for attempt in range(25):
-        n = driver.execute_script(
-            "const c=window._exposed_chartWidgetCollection;"
-            "if(!c) return 0;"
-            "return c._activeChartWidgetModel.value().model().mainSeries().data().size();"
-        ) or 0
-        if n >= TARGET_BARS:
-            print(f"  loaded {n} bars (target {TARGET_BARS}), proceeding.")
+        res = driver.execute_script(FIRST_BAR_JS) or [0, 0]
+        n = int(res[0] or 0)
+        first_ep = int(res[1] or 0)
+        if first_ep and first_ep <= need_back_to:
+            print(f"  history covers {month_label} ({n} bars, first "
+                  f"{datetime.fromtimestamp(first_ep, tz=timezone.utc).date()}), "
+                  f"proceeding.", flush=True)
             break
         if n == last_n:
             stagnant_streak += 1
@@ -370,11 +392,9 @@ def main():
         )
         if attempt % 3 == 0:
             print(f"  attempt {attempt + 1:2}: {n} bars so far...", flush=True)
-        _loading(driver,
-                 f"Paging TV history: {n}/{TARGET_BARS} bars "
-                 f"(attempt {attempt + 1}/25)...")
+        _loading(driver, f"Paging TV history: {n} bars (attempt {attempt + 1}/25)...")
         last_n = n
-        time.sleep(2.0)
+        time.sleep(1.0)
 
     print("==> reading TV's loaded bar range + filtering setups...", flush=True)
     _loading(driver, "Reading TV bar range + filtering setups...")

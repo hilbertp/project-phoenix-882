@@ -77,12 +77,43 @@ else
 fi
 
 echo
-echo "==> Refreshing BTC 1H data (Binance public REST)..."
-echo "    Without this, the CSV's last bar can be days stale while TV shows"
-echo "    today's bars, so the bar-range filter produces zero setups."
-env PYTHONPATH="$REPO_ROOT" "$VENV_PY" "$SCRIPT_DIR/acquire_long_asset.py" \
-  BTCUSDT 1h 2>&1 | tail -3 || \
-  echo "    (warning: data refresh failed; continuing with whatever's on disk)"
+# Only refresh data when the CSV does NOT already cover the requested month.
+# A past month's bars never change, so re-fetching 8+ years from Binance every
+# run is both slow (~80s) and fragile (a mid-fetch network reset used to leave
+# a short file). If the CSV's last bar is already past the end of MONTH, the
+# month is fully covered -- skip the network entirely. This is what makes a
+# past-month replay FAST and REPRODUCIBLE (no network dependency at all).
+CSV="$REPO_ROOT/data/discovery_bet_1/binance_btcusdt_1h_full_history.csv"
+# First day of the month AFTER the requested one (lexical YYYY-MM-DD compare).
+NEXT_MONTH=$(env TZ=UTC "$VENV_PY" - "$MONTH" <<'PY'
+import sys, datetime
+y, m = map(int, sys.argv[1].split("-"))
+nm = datetime.date(y + (m // 12), (m % 12) + 1, 1)
+print(nm.isoformat())
+PY
+)
+NEED_REFRESH=1
+if [ -f "$CSV" ]; then
+  LAST_BAR=$(tail -1 "$CSV" | cut -d, -f1 | cut -dT -f1)   # YYYY-MM-DD
+  if [[ -n "$LAST_BAR" && "$LAST_BAR" > "$NEXT_MONTH" ]] || \
+     [[ "$LAST_BAR" == "$NEXT_MONTH" ]]; then
+    NEED_REFRESH=0
+  fi
+fi
+if [ "${PHOENIX_FORCE_REFRESH:-0}" = "1" ]; then NEED_REFRESH=1; fi
+
+if [ "$NEED_REFRESH" = "0" ]; then
+  echo "==> CSV already covers $MONTH (last bar $LAST_BAR) -- skipping refresh."
+  echo "    Past months are immutable; this run is offline + reproducible."
+  echo "    (set PHOENIX_FORCE_REFRESH=1 to force a re-fetch.)"
+else
+  echo "==> Refreshing BTC 1H data (Binance public REST) -- $MONTH not yet covered..."
+  echo "    The acquire step retries network blips and refuses to overwrite a"
+  echo "    longer history with a shorter one, so it can't truncate the file."
+  env PYTHONPATH="$REPO_ROOT" "$VENV_PY" "$SCRIPT_DIR/acquire_long_asset.py" \
+    BTCUSDT 1h 2>&1 | tail -4 || \
+    echo "    (refresh failed; the existing CSV was kept -- continuing with it)"
+fi
 
 echo
 echo "==> Starting BTC 1H WSAD review for month $MONTH (6c / 2.0x ATR)..."
