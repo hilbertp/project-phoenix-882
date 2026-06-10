@@ -11,6 +11,10 @@ This README is the entry point for engineers and contributors. For canonical
 folder/lane rules see [docs/repository_conventions.md](docs/repository_conventions.md);
 for inbound-contribution terms see [CONTRIBUTING.md](CONTRIBUTING.md).
 
+> **▶ Run a manual TradingView review in one command** — see
+> **[docs/TV_REVIEW_RUNBOOK.md](docs/TV_REVIEW_RUNBOOK.md)**:
+> `cd ~/project-phoenix-882 && ./scripts/tv-btc.sh 2026-05`
+
 ---
 
 ## What the system does
