@@ -145,7 +145,9 @@ def execute(
                 break
     if entry_bar is None:
         return {"status": "no_entry", "events": events, "r": 0.0, "levels": levels}
-    events.append((f"Entry {entry_c}", candles[entry_bar].source_timestamp, entry))
+    # NOTE: the Entry event is appended AFTER the fill bar is resolved below, so
+    # with sub-bars its timestamp is the actual 5m/15m fill bar -- not the start
+    # of the 1H bar. Renderers place the fill marker on the right candle.
 
     # ---- Ground-truth outcome rules (human-validated, May-2026 BTC review) ----
     # The user graded 27 setups by eye; 15 were mis-scored, all explained by three
@@ -186,6 +188,7 @@ def execute(
         if fi is not None:
             fill_bar = kids0[fi]
             entry_hour_rest = kids0[fi + 1:]
+    events.append((f"Entry {entry_c}", fill_bar.source_timestamp, entry))
     if (fill_bar.low <= sl) if up else (fill_bar.high >= sl):
         events.append((f"Initial SL {init_sl_c} hit on the fill bar - full loss",
                        fill_bar.source_timestamp, sl))

@@ -58,21 +58,25 @@ FG = "#d0d4dc"
 GRID = "#262d38"
 UP = "#26a69a"
 DOWN = "#ef5350"
+# User-specified palette (2026-06-10): solid lines, white parent, green entry,
+# red SL, TP1->TP3 in distinguishable shades of blue.
 ENTRY_C = "#22c55e"
 SL_C = "#ef4444"
-BE_C = "#f59e0b"
-TP2_C = "#fb923c"
-TP3_C = "#34d399"
-LEG_C = "#60a5fa"
+PARENT_C = "#e5e7eb"
+TP1_C = "#93c5fd"
+TP2_C = "#60a5fa"
+TP3_C = "#2563eb"
+BE_C = "#f59e0b"          # break-even stop-out marker only
+LEG_C = "#8b949e"
 ZOOM_BOX_C = "#facc15"
 
 LEVELS = [
-    (0.0, "#34d399", "TP3 0.0"),
-    (0.5, "#fb923c", "TP2 0.5"),
-    (0.882, "#facc15", "TP1/BE 0.882"),
-    (0.941, "#22c55e", "ENTRY 0.941"),
-    (1.0, "#60a5fa", "parent 1.0"),
-    (1.05, "#ef4444", "SL 1.05"),
+    (0.0, TP3_C, "TP3 0.0"),
+    (0.5, TP2_C, "TP2 0.5"),
+    (0.882, TP1_C, "TP1/BE 0.882"),
+    (0.941, ENTRY_C, "ENTRY 0.941"),
+    (1.0, PARENT_C, "parent 1.0"),
+    (1.05, SL_C, "SL 1.05"),
 ]
 
 CSV_1H = REPO_ROOT / "data/discovery_bet_1/binance_btcusdt_1h_full_history.csv"
@@ -83,7 +87,7 @@ STATUS_CLASS = {"tp1_then_scratch": "TP1", "tp2_then_scratch": "TP2",
                 "tp3_full": "TP3", "wipeout": "LOSS", "open": "OPEN"}
 SCORED_CLASS = {"scratch": "TP1", "partial": "TP2", "win": "TP3",
                 "loss": "LOSS", "miss": "MISSED"}
-CLASS_COLOR = {"TP1": BE_C, "TP2": TP2_C, "TP3": TP3_C, "LOSS": SL_C, "OPEN": LEG_C}
+CLASS_COLOR = {"TP1": TP1_C, "TP2": TP2_C, "TP3": TP3_C, "LOSS": SL_C, "OPEN": LEG_C}
 
 
 def load_csv(path: Path) -> list[Candle]:
@@ -136,7 +140,7 @@ def _classify_event(label: str) -> tuple[str, str, str]:
     if label.startswith("Entry"):
         return "FILL", ENTRY_C, "o"
     if label.startswith("TP1"):
-        return "TP1 +25% · SL→entry", BE_C, "^"
+        return "TP1 +25% · SL→entry", TP1_C, "^"
     if label.startswith("TP2"):
         return "TP2 +60%", TP2_C, "^"
     if label.startswith("TP3"):
@@ -202,19 +206,19 @@ def draw_card(setup_no: int, total: int, leg: dict, res: dict,
     x_left = mdates.date2num(_dt(window[0].source_timestamp))
     x_right = mdates.date2num(_dt(window[-1].source_timestamp))
 
-    # ---- fib levels ----
+    # ---- fib levels (solid, thin -- user: 'no dashed lanes') ----
     for coeff, color, name in LEVELS:
         p = lvl(coeff)
-        ax.hlines(p, x_left, x_right, colors=color, linewidth=1.0,
-                  linestyles="--", alpha=0.75, zorder=1)
+        ax.hlines(p, x_left, x_right, colors=color, linewidth=0.9,
+                  alpha=0.65, zorder=1)
         ax.annotate(f"{name}  {p:,.0f}", xy=(x_right, p), xytext=(4, 0),
                     textcoords="offset points", color=color, fontsize=8,
                     va="center", annotation_clip=False)
 
     # ---- the swing leg ----
     ax.plot([mdates.date2num(_dt(leg["parent_ts"])), mdates.date2num(_dt(leg["term_ts"]))],
-            [parent, term], color=LEG_C, linewidth=1.6, linestyle=":",
-            alpha=0.9, zorder=4)
+            [parent, term], color=LEG_C, linewidth=1.4, linestyle=":",
+            alpha=0.8, zorder=4)
 
     # ---- the ACTIVE-STOP step line (the "dragging") ----
     if events:
@@ -305,7 +309,7 @@ def draw_card(setup_no: int, total: int, leg: dict, res: dict,
             p = lvl(coeff)
             if v_lo - v_pad <= p <= v_hi + v_pad:
                 axz.hlines(p, -0.5, len(sub) - 0.5, colors=color,
-                           linewidth=0.9, linestyles="--", alpha=0.85)
+                           linewidth=0.8, alpha=0.7)
                 axz.annotate(name.split()[0], xy=(len(sub) - 0.4, p),
                              color=color, fontsize=6.5, va="center",
                              annotation_clip=False)
