@@ -212,17 +212,18 @@ def execute(
                 events.append((f"Initial SL {init_sl_c} - full loss", b.source_timestamp, sl))
                 return {"status": "wipeout", "events": events, "r": -1.0, "levels": levels}
             if hit_tp1:
+                # A bar that spans the WHOLE entry<->TP1 band (touches both) is a
+                # micro-graze, not a managed event: no partial, BE not armed, stay
+                # phase 1 with the 1.05 hard stop. Validated against the user's
+                # informed labels: every same-bar graze they graded was LOSS/TP2
+                # (position unmanaged), every separate-bar TP1-tag-then-return
+                # they graded was a TP1 scratch.
+                if (b.low <= entry) if up else (b.high >= entry):
+                    continue
                 phase, sl = 2, entry
                 realized += p1 * r_tp1
                 events.append((f"TP1 {be_trig_c} - take {p1:.0%}, SL -> entry (break-even)",
                                b.source_timestamp, be_trig))
-                # Same-bar return to entry after the TP1 touch is unknowable from
-                # OHLC at this granularity; resolve unfavorably -> immediate scratch.
-                if (b.low <= entry) if up else (b.high >= entry):
-                    events.append(("Break-even touch on the TP1 bar - scratch remainder at 0R",
-                                   b.source_timestamp, entry))
-                    return {"status": "tp1_then_scratch", "events": events, "r": realized,
-                            "levels": levels}
         elif phase == 2:
             hit_be = (b.low <= sl) if up else (b.high >= sl)
             hit_tp2 = (b.high >= tp2) if up else (b.low <= tp2)

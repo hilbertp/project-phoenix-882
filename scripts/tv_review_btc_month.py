@@ -363,18 +363,20 @@ def main():
             and l["parent_ts"] <= cutoff_end]
     print(f"==> {len(legs)} clean legs in {month_label}")
 
-    # 15m sub-bars resolve intra-1H event order (which of SL/TP was hit first)
-    # from data instead of conservative guessing. Optional: without the file the
-    # outcomes fall back to 1H-granularity ties.
+    # Sub-bars resolve intra-1H event order (which of SL/TP was hit first) from
+    # data instead of conservative guessing; finest available granularity wins.
+    # Optional: without any sub-bar file the outcomes fall back to 1H ties.
     subbars = None
-    csv_15m = REPO_ROOT / "data/discovery_bet_1/binance_btcusdt_15m_full_history.csv"
-    if csv_15m.exists():
-        subbars = build_subbar_index(load_csv(csv_15m))
-        print(f"==> 15m sub-bars loaded for intra-bar outcome resolution "
-              f"({len(subbars)} hours).", flush=True)
-    else:
-        print("==> WARN: no 15m CSV; outcomes use conservative 1H tie-breaks. "
-              "Run: scripts/acquire_long_asset.py BTCUSDT 15m", flush=True)
+    for grain in ("5m", "15m"):
+        p = REPO_ROOT / f"data/discovery_bet_1/binance_btcusdt_{grain}_full_history.csv"
+        if p.exists():
+            subbars = build_subbar_index(load_csv(p))
+            print(f"==> {grain} sub-bars loaded for intra-bar outcome resolution "
+                  f"({len(subbars)} hours).", flush=True)
+            break
+    if subbars is None:
+        print("==> WARN: no sub-bar CSV; outcomes use conservative 1H tie-breaks. "
+              "Run: scripts/acquire_long_asset.py BTCUSDT 5m", flush=True)
 
     for leg in legs:
         _annotate_span_depth(leg, idx_map, atr)
