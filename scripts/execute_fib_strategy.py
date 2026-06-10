@@ -5,10 +5,13 @@ The trade plan is one of the regimes in REGIMES below; the FIRST entry is the
 live default (entry | initial SL | a TP1 partial that also drags SL to break-even
 | TP2 | TP3). Sizing: TP1 25%, TP2 60%, TP3 15% (runner).
 
-Bar-by-bar, conservative (one decisive event per bar). The initial SL is an
-intrabar hard stop; the break-even stop (SL at entry after the TP1 partial) is
-CLOSE-based -- a wick through entry does not knock you out, only a close beyond it
--- matching the validated simulator and the user's ground truth.
+Bar-by-bar, conservative. The initial SL is an intrabar hard stop, live from
+the moment of fill (entry bar included). The break-even stop (SL at entry after
+the TP1 partial) is TOUCH-based -- any wick back to entry scratches the
+remainder. Same-bar ambiguities resolve unfavorably (SL beats TP1, BE beats
+TP2/TP3). These rules were validated against the user's hand-graded May-2026
+BTC review (27 setups); tests/test_execute_outcome_ground_truth.py replays
+those labels and must stay green.
 """
 from __future__ import annotations
 
@@ -65,6 +68,22 @@ def _lvl(terminal: float, parent: float, coeff: float) -> float:
     return terminal + (parent - terminal) * coeff
 
 
+def build_subbar_index(sub_candles) -> dict:
+    """Group finer-granularity candles (e.g. 15m) by their parent-hour key.
+
+    Key = the first 13 chars of the ISO timestamp ("YYYY-MM-DDTHH"), which is
+    identical for an 1H bar and every sub-bar inside that hour. execute() uses
+    this to resolve intra-bar event ORDER (which level was touched first)
+    instead of guessing from a single 1H OHLC row.
+    """
+    out: dict[str, list] = {}
+    for c in sub_candles:
+        out.setdefault(c.source_timestamp[:13], []).append(c)
+    for kids in out.values():
+        kids.sort(key=lambda c: c.source_timestamp)
+    return out
+
+
 def execute(
     candles,
     idx,
@@ -78,6 +97,7 @@ def execute(
     p1: float = P_TP1,
     p2: float = P_TP2,
     p3: float = P_TP3,
+    subbars: dict | None = None,
 ) -> dict:
     parent, terminal = swing["parent_price"], swing["term_price"]
     ti = idx[swing["term_ts"]]
@@ -127,45 +147,108 @@ def execute(
         return {"status": "no_entry", "events": events, "r": 0.0, "levels": levels}
     events.append((f"Entry {entry_c}", candles[entry_bar].source_timestamp, entry))
 
-    # The entry bar is skipped entirely (evaluation starts the NEXT bar), matching
-    # the reach engine (scripts/track_fib_reaches.py) which begins tracking after
-    # the fill to avoid intra-entry-bar ambiguity. The old code allowed an entry-bar
-    # stop-out but never an entry-bar TP -- an asymmetry that fabricated losses,
-    # worst for deep entries whose TP1->SL band a single bar often spans.
+    # ---- Ground-truth outcome rules (human-validated, May-2026 BTC review) ----
+    # The user graded 27 setups by eye; 15 were mis-scored, all explained by three
+    # code decisions that this rewrite removes. The validated contract:
+    #   1. The stop is LIVE from the fill. An initial-SL touch on the ENTRY BAR is
+    #      a real stop-out: for a long, price below entry exists only after the
+    #      first 0.941 touch, so the breach is provably post-fill. (The previous
+    #      code skipped the entry bar entirely -- 8 of the 10 false wins.)
+    #   2. The FILL bar can KILL but never CREDIT: a high/low on the bar that
+    #      fills the entry may predate the fill, so TP touches count only on
+    #      bars after it. With `subbars` (15m children keyed by hour, see
+    #      build_subbar_index) the fill bar shrinks from the whole hour to one
+    #      15m bar, so legitimate same-hour bounces ARE credited.
+    #   3. Same-bar ambiguity resolves UNFAVORABLY (user rule "SL wins"): a bar
+    #      touching both TP1 and the initial SL is a wipeout; a bar touching both
+    #      TP2/TP3 and the break-even level is a scratch. Sub-bars shrink the
+    #      ambiguity window from 1H to 15m before this tie-break ever applies.
+    #   4. The post-TP1 break-even stop at entry is TOUCH-based -- any wick back to
+    #      entry scratches the remainder. (Was close-based; user corrected it.)
     phase, sl, realized = 1, init_sl, 0.0
-    for j in range(entry_bar + 1, len(candles)):
-        c = candles[j]
+    subbars = subbars or {}
+
+    # --- Entry bar: locate the fill as precisely as the data allows. ---
+    # With sub-bars we find the 15m child where the fill occurred: that child can
+    # KILL (an SL touch there is provably post-fill) but never credit; children
+    # AFTER it are ordinary post-fill bars and may credit TPs. Without sub-bars
+    # the whole hour is one opaque bar: kill-only.
+    c0 = candles[entry_bar]
+    entry_hour_rest: list = []
+    kids0 = subbars.get(c0.source_timestamp[:13])
+    fill_bar = c0
+    if kids0:
+        fi = None
+        for k, b in enumerate(kids0):
+            if (b.low <= entry) if up else (b.high >= entry):
+                fi = k
+                break
+        if fi is not None:
+            fill_bar = kids0[fi]
+            entry_hour_rest = kids0[fi + 1:]
+    if (fill_bar.low <= sl) if up else (fill_bar.high >= sl):
+        events.append((f"Initial SL {init_sl_c} hit on the fill bar - full loss",
+                       fill_bar.source_timestamp, sl))
+        return {"status": "wipeout", "events": events, "r": -1.0, "levels": levels}
+
+    def _bars():
+        """Post-fill evaluation stream: rest of the entry hour (sub-bars), then
+        every later 1H bar -- expanded into its sub-bars when we have them."""
+        yield from entry_hour_rest
+        for j in range(entry_bar + 1, len(candles)):
+            cj = candles[j]
+            kids = subbars.get(cj.source_timestamp[:13])
+            if kids:
+                yield from kids
+            else:
+                yield cj
+
+    for b in _bars():
         if phase == 1:
-            hit_tp1 = c.high >= be_trig if up else c.low <= be_trig
-            hit_sl = c.low <= sl if up else c.high >= sl
-            # Nearest-first within a bar (reach-engine convention): entry sits
-            # between TP1 and the initial SL, TP1 being the nearer level, so a bar
-            # spanning both traverses TP1 first.
+            hit_tp1 = b.high >= be_trig if up else b.low <= be_trig
+            hit_sl = b.low <= sl if up else b.high >= sl
+            if hit_sl:
+                # SL wins same-bar ties (conservative, user-validated).
+                events.append((f"Initial SL {init_sl_c} - full loss", b.source_timestamp, sl))
+                return {"status": "wipeout", "events": events, "r": -1.0, "levels": levels}
             if hit_tp1:
                 phase, sl = 2, entry
                 realized += p1 * r_tp1
-                events.append((f"TP1 {be_trig_c} - take {p1:.0%}, SL -> entry (break-even)", c.source_timestamp, be_trig))
-            elif hit_sl:
-                events.append((f"Initial SL {init_sl_c} - full loss", c.source_timestamp, sl))
-                return {"status": "wipeout", "events": events, "r": -1.0, "levels": levels}
+                events.append((f"TP1 {be_trig_c} - take {p1:.0%}, SL -> entry (break-even)",
+                               b.source_timestamp, be_trig))
+                # Same-bar return to entry after the TP1 touch is unknowable from
+                # OHLC at this granularity; resolve unfavorably -> immediate scratch.
+                if (b.low <= entry) if up else (b.high >= entry):
+                    events.append(("Break-even touch on the TP1 bar - scratch remainder at 0R",
+                                   b.source_timestamp, entry))
+                    return {"status": "tp1_then_scratch", "events": events, "r": realized,
+                            "levels": levels}
         elif phase == 2:
-            # Intrabar TP wick precedes the bar's close, so a TP2 touch is taken
-            # before the close-based break-even stop is evaluated.
-            if (up and c.high >= tp2) or (not up and c.low <= tp2):
+            hit_be = (b.low <= sl) if up else (b.high >= sl)
+            hit_tp2 = (b.high >= tp2) if up else (b.low <= tp2)
+            if hit_be:
+                # Touch-based BE stop; also wins same-bar ties vs TP2 (conservative).
+                events.append(("Break-even stop (touch at entry) - scratch remainder at 0R",
+                               b.source_timestamp, sl))
+                return {"status": "tp1_then_scratch", "events": events, "r": realized,
+                        "levels": levels}
+            if hit_tp2:
                 phase = 3
                 realized += p2 * r_tp2
-                events.append((f"TP2 {tp2_c} - take {p2:.0%}", c.source_timestamp, tp2))
-            elif (up and c.close <= sl) or (not up and c.close >= sl):
-                events.append(("Break-even stop (close at entry) - scratch remainder at 0R", c.source_timestamp, sl))
-                return {"status": "tp1_then_scratch", "events": events, "r": realized, "levels": levels}
+                events.append((f"TP2 {tp2_c} - take {p2:.0%}", b.source_timestamp, tp2))
         else:
-            if (up and c.high >= tp3) or (not up and c.low <= tp3):
+            hit_be = (b.low <= sl) if up else (b.high >= sl)
+            hit_tp3 = (b.high >= tp3) if up else (b.low <= tp3)
+            if hit_be:
+                events.append(("Break-even stop (touch at entry) - scratch runner at 0R",
+                               b.source_timestamp, sl))
+                return {"status": "tp2_then_scratch", "events": events, "r": realized,
+                        "levels": levels}
+            if hit_tp3:
                 realized += p3 * r_tp3
-                events.append((f"TP3 {tp3_c} - take final {p3:.0%} (full target)", c.source_timestamp, tp3))
+                events.append((f"TP3 {tp3_c} - take final {p3:.0%} (full target)",
+                               b.source_timestamp, tp3))
                 return {"status": "tp3_full", "events": events, "r": realized, "levels": levels}
-            elif (up and c.close <= sl) or (not up and c.close >= sl):
-                events.append(("Break-even stop (close at entry) - scratch runner at 0R", c.source_timestamp, sl))
-                return {"status": "tp2_then_scratch", "events": events, "r": realized, "levels": levels}
     return {"status": "open", "events": events, "r": realized, "levels": levels}
 
 

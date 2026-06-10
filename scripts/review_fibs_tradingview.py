@@ -393,10 +393,14 @@ _OUTCOME_LABEL = {
 }
 
 
-def _annotate_outcome(leg, candles, idx_map):
-    """Run the Fib trade plan and attach the success outcome + blended R."""
+def _annotate_outcome(leg, candles, idx_map, subbars=None):
+    """Run the Fib trade plan and attach the success outcome + blended R.
+
+    `subbars` (optional): build_subbar_index() of finer candles (e.g. 15m) so
+    intra-bar event ORDER is resolved from data instead of conservative ties.
+    """
     try:
-        res = execute(candles, idx_map, leg)
+        res = execute(candles, idx_map, leg, subbars=subbars)
     except Exception:
         return leg
     label, kind = _OUTCOME_LABEL.get(res["status"], (res["status"], "open"))

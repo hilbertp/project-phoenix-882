@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import calendar
 import csv
+import json
 import os
 import re
 import sys
@@ -55,6 +56,7 @@ from apps.api.db1_review_tradingview.service import (
     TradingViewSyncRequest,
     _build_expected_line_tool_points,
 )
+from scripts.execute_fib_strategy import build_subbar_index
 from scripts.place_fibs_tradingview import (
     PLACE_FIB_JS,
     REMOVE_VOLUME_JS,
@@ -276,6 +278,51 @@ def navigate_to_fib(driver, leg):
         return {"ok": False, "error": str(exc)}
 
 
+def load_prior_verdicts(setups: list, labels_path: Path) -> dict:
+    """Reload verdicts already given for these setups so a relaunch resumes
+    instead of starting blank.
+
+    human_labels.jsonl persists every verdict keyed by setup_key
+    (`parent_ts|term_ts`), latest-wins. We map each current setup's index to
+    its most recent stored verdict, in the SAME display form the live loop
+    uses (VERDICT_ACCEPT / 'setup_wrong' / 'outcome_wrong:TPx'). Only BTC 1h
+    labels are considered, so ADA/other-asset labels can't bleed in.
+
+    Returns {setup_index: display_verdict}.
+    """
+    if not labels_path.exists():
+        return {}
+    latest: dict[str, dict] = {}
+    for line in labels_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        dp = rec.get("detector_params", {}) or {}
+        if dp.get("asset") != "BTC" or dp.get("interval") != "1h":
+            continue
+        key = rec.get("setup_key") or f"{rec.get('parent_ts')}|{rec.get('term_ts')}"
+        latest[key] = rec  # later lines overwrite -> latest wins
+    out: dict[int, str] = {}
+    for idx, leg in enumerate(setups):
+        rec = latest.get(f"{leg['parent_ts']}|{leg['term_ts']}")
+        if not rec:
+            continue
+        dp = rec.get("detector_params", {}) or {}
+        if rec.get("verdict") == VERDICT_ACCEPT:
+            out[idx] = VERDICT_ACCEPT
+        elif dp.get("wrong_kind") == "setup":
+            out[idx] = "setup_wrong"
+        elif dp.get("wrong_kind") == "outcome":
+            out[idx] = f"outcome_wrong:{dp.get('expected_outcome', '?')}"
+        else:
+            out[idx] = rec.get("verdict", VERDICT_REJECT)
+    return out
+
+
 def parse_month(s: str) -> tuple[str, str, str]:
     """Returns (label, cutoff_start_iso, cutoff_end_iso) for a YYYY-MM string."""
     m = re.match(r"^(\d{4})-(\d{2})$", s)
@@ -316,9 +363,22 @@ def main():
             and l["parent_ts"] <= cutoff_end]
     print(f"==> {len(legs)} clean legs in {month_label}")
 
+    # 15m sub-bars resolve intra-1H event order (which of SL/TP was hit first)
+    # from data instead of conservative guessing. Optional: without the file the
+    # outcomes fall back to 1H-granularity ties.
+    subbars = None
+    csv_15m = REPO_ROOT / "data/discovery_bet_1/binance_btcusdt_15m_full_history.csv"
+    if csv_15m.exists():
+        subbars = build_subbar_index(load_csv(csv_15m))
+        print(f"==> 15m sub-bars loaded for intra-bar outcome resolution "
+              f"({len(subbars)} hours).", flush=True)
+    else:
+        print("==> WARN: no 15m CSV; outcomes use conservative 1H tie-breaks. "
+              "Run: scripts/acquire_long_asset.py BTCUSDT 15m", flush=True)
+
     for leg in legs:
         _annotate_span_depth(leg, idx_map, atr)
-        _annotate_outcome(leg, candles, idx_map)
+        _annotate_outcome(leg, candles, idx_map, subbars=subbars)
 
     include_misses = os.environ.get("PHOENIX_REVIEW_INCLUDE_MISSES") in ("1", "true", "yes")
     if not include_misses:
@@ -465,7 +525,14 @@ def main():
     driver.execute_script("window.__reviewSeq = 0; window.__reviewAction = null;")
     driver.execute_cdp_cmd("Page.bringToFront", {})
 
-    verdicts = {}
+    # Reload verdicts already given for these setups (persisted in
+    # human_labels.jsonl, latest-wins) so a relaunch after a bug fix doesn't
+    # make the user re-grade everything from scratch.
+    verdicts = load_prior_verdicts(setups, LABELS_PATH)
+    if verdicts:
+        print(f"==> resumed {len(verdicts)} prior verdicts from "
+              f"{LABELS_PATH.name}; {len(setups) - len(verdicts)} setups "
+              f"still unreviewed.", flush=True)
     started_at = datetime.now(timezone.utc)
 
     REMOVE_ALL_LINETOOLS_JS = r"""
