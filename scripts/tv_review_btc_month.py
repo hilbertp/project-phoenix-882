@@ -558,16 +558,27 @@ def main():
     last_seq = 0
     show(i)
 
-    def _drain_stale():
-        nonlocal last_seq
-        cur = driver.execute_script("return window.__reviewSeq || 0;")
-        try:
-            last_seq = int(cur) if cur is not None else last_seq
-        except (TypeError, ValueError):
-            pass
-        driver.execute_script("window.__reviewAction = null;")
+    # Initial HARD reset: discard any keypresses that piled up while the chart
+    # was first loading/rendering, so the review starts clean at setup 1.
+    cur = driver.execute_script("return window.__reviewSeq || 0;")
+    try:
+        last_seq = int(cur) if cur is not None else 0
+    except (TypeError, ValueError):
+        last_seq = 0
+    driver.execute_script("window.__reviewAction = null;")
 
-    _drain_stale()
+    def _drain_stale():
+        # Clear ONLY the action we just processed; PRESERVE any newer action the
+        # user submitted DURING show() (~1.5s of clear+place+double-zoom). The
+        # old version jumped last_seq to the current global seq and nulled
+        # unconditionally, which silently dropped a click/keypress made while the
+        # chart was still rendering -- that was the "clicking outcome doesn't
+        # advance" race. last_seq already equals the processed action's seq
+        # (set in the loop), so this nulls the stale one and lets a fresher one
+        # through on the next poll.
+        driver.execute_script(
+            "if (window.__reviewAction && (window.__reviewAction.seq||0) <= arguments[0])"
+            " { window.__reviewAction = null; }", last_seq)
     print("==> Panel ready. Press W/S/A/D/Enter in the TV chart window.", flush=True)
     print("    Verdicts append to data/discovery_bet_1/human_labels.jsonl.", flush=True)
 

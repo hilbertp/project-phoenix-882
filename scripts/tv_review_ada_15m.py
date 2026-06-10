@@ -164,6 +164,7 @@ window.__reviewStatus = function(title, info){
   if (i && info != null) i.innerHTML = info;
 };
 window.__reviewKeyHandler = function(e){
+  if (e.repeat) return;  // ignore auto-repeat (holding a key) -> no multi-jump
   if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) return;
   var inWrong   = document.getElementById('db1rv-wrong').style.display   === 'block';
   var inOutcome = document.getElementById('db1rv-outcome').style.display === 'block';
