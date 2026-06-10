@@ -77,15 +77,13 @@ from scripts.tv_review_ada_15m import (
     build_ada_report_html,
 )
 
-# Override detector params shown in the panel's gate-check line.
-_rf.DETECTOR_PARAMS["min_bars"] = 6
-_rf.DETECTOR_PARAMS["atr_mult"] = 2.0
-
 # --- BTC 1H config ---
 SYMBOL = "BINANCE:BTCUSDT"
 TV_INTERVAL = "60"   # 1H
 CHART_URL = f"https://www.tradingview.com/chart/?symbol={SYMBOL.replace(':', '%3A')}&interval={TV_INTERVAL}"
 CSV_PATH = REPO_ROOT / "data/discovery_bet_1/binance_btcusdt_1h_full_history.csv"
+# Detector gates -- MINIMUMS (a 2.0x run includes every deeper leg too). Set
+# from the CLI in main(); module-level defaults kept for importers.
 MIN_BARS = 6
 ATR_MULT = 2.0
 DEBUG_PORT = 9222
@@ -339,9 +337,19 @@ def parse_month(s: str) -> tuple[str, str, str]:
 
 
 def main():
+    global MIN_BARS, ATR_MULT
     ap = argparse.ArgumentParser()
     ap.add_argument("--month", required=True, help="YYYY-MM, e.g. 2026-05")
+    ap.add_argument("--min-bars", type=int, default=6,
+                    help="detector minimum bars per leg (default 6)")
+    ap.add_argument("--mult", type=float, default=2.0,
+                    help="detector MINIMUM ATR multiple (default 2.0; deeper "
+                         "legs always qualify)")
     args = ap.parse_args()
+    MIN_BARS, ATR_MULT = args.min_bars, args.mult
+    _rf.DETECTOR_PARAMS["min_bars"] = MIN_BARS
+    _rf.DETECTOR_PARAMS["atr_mult"] = ATR_MULT
+    config_tag = f"{MIN_BARS}c/{ATR_MULT:g}x"
     month_label, cutoff_start, cutoff_end = parse_month(args.month)
 
     if not CSV_PATH.exists():
@@ -353,7 +361,7 @@ def main():
     atr = calculate_atr14(candles)
     pivots = detect_local_pivots(candles)
 
-    print(f"==> {month_label}: filtering setups with parent_ts in "
+    print(f"==> {month_label} @ {config_tag}: filtering setups with parent_ts in "
           f"[{cutoff_start}, {cutoff_end}]", flush=True)
 
     legs = [l for l in _clean_legs(candles, atr, pivots,
@@ -522,7 +530,7 @@ def main():
     driver.execute_script(
         "const t=document.getElementById('db1rv-title');"
         "if(t) t.textContent = arguments[0];",
-        f"BTC 1H Review -- {month_label}"
+        f"BTC 1H Review -- {month_label} ({config_tag})"
     )
     driver.execute_script("window.__reviewSeq = 0; window.__reviewAction = null;")
     driver.execute_cdp_cmd("Page.bringToFront", {})
@@ -618,7 +626,7 @@ def main():
             print(f"  navigate warning: {nav}", file=sys.stderr)
         driver.execute_script(
             "window.__reviewStatus(arguments[0], arguments[1]);",
-            f"BTC 1H {month_label}  {i + 1}/{len(setups)}",
+            f"BTC 1H {month_label} {config_tag}  {i + 1}/{len(setups)}",
             _ada_info_html(i, len(setups), leg, extra,
                            verdict=verdicts.get(i)),
         )
@@ -748,7 +756,7 @@ def main():
         ended_at = datetime.now(timezone.utc)
         OUT_DIR.mkdir(parents=True, exist_ok=True)
         ts = ended_at.strftime("%Y%m%dT%H%M%S")
-        report_path = OUT_DIR / f"SESSION_BTC_{args.month}_{ts}.md"
+        report_path = OUT_DIR / f"SESSION_BTC_{args.month}_{MIN_BARS}c{ATR_MULT:g}x_{ts}.md"
         # Reuse the ADA markdown writer -- the schema is the same.
         from scripts.tv_review_ada_15m import write_session_report
         write_session_report(setups, verdicts, started_at, ended_at, report_path)

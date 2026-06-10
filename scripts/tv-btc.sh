@@ -33,6 +33,8 @@ VENV_PY="$REPO_ROOT/.venv/bin/python"
 
 # Default month = current calendar month if not provided.
 MONTH="${1:-$(date -u +%Y-%m)}"
+shift $(( $# > 0 ? 1 : 0 ))
+EXTRA_ARGS=("$@")   # e.g. --min-bars 24 --mult 4.0 (mult is a MINIMUM)
 
 # Sanity-check the format.
 if ! [[ "$MONTH" =~ ^[0-9]{4}-[0-9]{2}$ ]]; then
@@ -116,11 +118,11 @@ else
 fi
 
 echo
-echo "==> Starting BTC 1H WSAD review for month $MONTH (6c / 2.0x ATR)..."
+echo "==> Starting BTC 1H WSAD review for month $MONTH (${EXTRA_ARGS[*]-defaults 6c/2x})..."
 echo "    Switch to your TradingView Chrome window. Use:"
 echo "      W/Up=approve   S/Down=reject path   A/Left=prev   D/Right=next   Enter=done"
 echo "    Verdicts append to data/discovery_bet_1/human_labels.jsonl (tagged asset=BTC)."
 echo "    Session report (markdown + chart overlay) is written when you exit."
 echo
 exec env PYTHONPATH="$REPO_ROOT" PYTHONUNBUFFERED=1 "$VENV_PY" \
-  "$SCRIPT_DIR/tv_review_btc_month.py" --month "$MONTH"
+  "$SCRIPT_DIR/tv_review_btc_month.py" --month "$MONTH" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
