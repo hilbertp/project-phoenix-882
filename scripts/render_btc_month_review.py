@@ -338,11 +338,15 @@ def draw_card(setup_no: int, total: int, leg: dict, res: dict,
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--month", required=True, help="YYYY-MM, e.g. 2026-05")
+    win = ap.add_mutually_exclusive_group(required=True)
+    win.add_argument("--month", help="calendar month YYYY-MM, e.g. 2026-05")
+    win.add_argument("--last-days", type=int,
+                     help="trailing window in days (e.g. 92 for ~3 months)")
+    ap.add_argument("--min-bars", type=int, default=6,
+                    help="detector min bars per leg (default 6)")
+    ap.add_argument("--mult", type=float, default=2.0,
+                    help="detector min ATR multiple (default 2.0)")
     args = ap.parse_args()
-    y, m = map(int, args.month.split("-"))
-    cutoff_lo = f"{y:04d}-{m:02d}-01T00:00:00"
-    cutoff_hi = f"{y:04d}-{m:02d}-31T23:59:59"
 
     print("==> loading 1H + 5m candles...", flush=True)
     c1h = load_csv(CSV_1H)
@@ -351,11 +355,26 @@ def main() -> None:
     idx5 = {c.source_timestamp: i for i, c in enumerate(c5)}
     sub5 = build_subbar_index(c5)
 
-    print("==> detecting setups (6c / 2.0x)...", flush=True)
+    if args.month:
+        y, m = map(int, args.month.split("-"))
+        cutoff_lo = f"{y:04d}-{m:02d}-01T00:00:00"
+        cutoff_hi = f"{y:04d}-{m:02d}-31T23:59:59"
+        window_tag = args.month
+    else:
+        last_dt = _dt(c1h[-1].source_timestamp)
+        cutoff_lo = (last_dt - timedelta(days=args.last_days)).isoformat()
+        cutoff_hi = c1h[-1].source_timestamp
+        window_tag = f"last{args.last_days}d"
+    params_tag = f"{args.min_bars}c{args.mult:g}x"
+
+    print(f"==> detecting setups ({args.min_bars}c / {args.mult:g}x ATR) in "
+          f"[{cutoff_lo[:10]} .. {cutoff_hi[:10]}]...", flush=True)
     atr = calculate_atr14(c1h)
     piv = detect_local_pivots(c1h)
-    legs = [l for l in clean_legs(c1h, atr, piv, min_bars=6, mult=2.0)
+    legs = [l for l in clean_legs(c1h, atr, piv,
+                                  min_bars=args.min_bars, mult=args.mult)
             if l["term_ts"] in idx and cutoff_lo <= l["parent_ts"] <= cutoff_hi]
+    print(f"==> {len(legs)} clean legs", flush=True)
 
     triggered = []
     for leg in legs:
@@ -363,11 +382,13 @@ def main() -> None:
         if res["status"] in ("no_entry", "no_trigger", "degenerate"):
             continue
         triggered.append((leg, res))
-    print(f"==> {len(triggered)} triggered setups in {args.month}", flush=True)
+    print(f"==> {len(triggered)} triggered setups (0.941 tagged)", flush=True)
+    if not triggered:
+        raise SystemExit("nothing to render.")
 
     human = latest_human_labels()
     out_dir = (REPO_ROOT / "artifacts/discovery_bet_1/manual_review_btc_1h_month"
-               / f"cards_{args.month}")
+               / f"cards_{window_tag}_{params_tag}")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     cards = []
@@ -386,11 +407,11 @@ def main() -> None:
         f'<div class="card"><h3>{name}</h3><img src="{name}" loading="lazy"></div>'
         for name in cards)
     index.write_text(f"""<!doctype html><html><head><meta charset="utf-8">
-<title>BTC 1H review cards {args.month}</title>
+<title>BTC 1H review cards {window_tag} {params_tag}</title>
 <style>body{{background:{BG};color:{FG};font:14px -apple-system,sans-serif;margin:0;padding:16px}}
 .card{{margin-bottom:28px}} img{{width:100%;max-width:1700px;border:1px solid {GRID};border-radius:6px}}
 h3{{margin:6px 0;color:{ZOOM_BOX_C}}}</style></head><body>
-<h1>BTC 1H review cards — {args.month} ({len(cards)} setups)</h1>
+<h1>BTC 1H review cards — {window_tag} · {params_tag} ({len(cards)} setups)</h1>
 {rows}
 </body></html>""", encoding="utf-8")
     print(f"==> wrote {len(cards)} cards + index: {index}", flush=True)
