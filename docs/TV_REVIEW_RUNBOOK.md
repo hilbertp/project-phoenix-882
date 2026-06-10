@@ -75,10 +75,11 @@ Detector: **6 bars min, 2.0× ATR min**. Miss-filter ON (only setups where the
    `PHOENIX_CHROME_PROFILE=/abs/path`.
 
 2. **Chart must stay `BINANCE:BTCUSDT`.** The CSV is Binance-spot OHLC. If the
-   chart drifts to GOLD / `BITGET:BTCUSDT.P` (a watchlist click, or TV's
-   type-a-letter symbol-search popup), anchors land on wrong prices and the
-   zoom dies. The launch hides the watchlist and swallows stray keys to prevent
-   this — if it still happens, click `BTCUSDT` back and press A then D.
+   chart drifts to GOLD / `BITGET:BTCUSDT.P`, anchors land on wrong prices and
+   the zoom dies. The launch swallows stray printable keys so TV's
+   type-a-letter symbol-search popup can't open. The watchlist stays VISIBLE
+   and usable — but clicking a symbol in it still switches the chart, so if you
+   do, click `BTCUSDT` back and press A then D.
 
 3. **Never attach a throwaway selenium session to the running debug Chrome.**
    When that script exits, its garbage-collected driver sends `quit`, which

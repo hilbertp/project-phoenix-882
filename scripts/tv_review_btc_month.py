@@ -128,24 +128,25 @@ if (el) el.remove();
 return true;
 """
 
-# Keep the chart locked to BINANCE:BTCUSDT during a review. Two real ways the
-# user knocked the chart onto GOLD / Bitget (which silently breaks anchors,
-# since the CSV is Binance-spot OHLC):
-#   (a) clicking a symbol in the right-hand watchlist, and
-#   (b) typing a letter while the chart has focus -> TV's "symbol search" popup.
-# This hides the watchlist (CSS) and swallows stray printable keys (capture
-# keydown) so neither can happen. Panel keys (W/S/A/D/R/F/1/2/3/L/M/arrows/
-# Enter/Esc) are explicitly allowed through to the panel's own handler.
+# Keep the chart locked to BINANCE:BTCUSDT during a review WITHOUT hiding the
+# watchlist (the user wants the asset list visible + usable). The drift path we
+# still block is the accidental one: typing a letter while the chart has focus
+# opens TV's "symbol search" popup and switches the chart. A capture-phase
+# keydown swallows stray printable chars so that popup never opens. Panel keys
+# (W/S/A/D/R/F/1/2/3/L/M/arrows/Enter/Esc) pass through to the panel handler;
+# anything typed into a real input (incl. the watchlist search box) passes too.
+#
+# We intentionally do NOT hide the watchlist anymore. Clicking a watchlist
+# symbol will still switch the chart -- if that happens, click BTCUSDT back and
+# press A then D. (Earlier we hid it via CSS; that greyed-out the asset list,
+# which the user did not want.)
+#
+# Belt-and-suspenders: also remove any leftover hide-CSS from an older build so
+# a stale session doesn't keep the watchlist greyed after this update.
 SYMBOL_LOCK_JS = r"""
 try {
-  if (!document.getElementById('db1rv-symlock-css')) {
-    var st = document.createElement('style');
-    st.id = 'db1rv-symlock-css';
-    st.textContent =
-      '.widgetbar-wrap{display:none !important;}' +
-      '.layout__area--right{display:none !important;}';
-    document.head.appendChild(st);
-  }
+  var old = document.getElementById('db1rv-symlock-css');
+  if (old) old.remove();
 } catch (e) {}
 if (window.__symLockHandler) {
   document.removeEventListener('keydown', window.__symLockHandler, true);
@@ -164,7 +165,7 @@ window.__symLockHandler = function(e){
   }
 };
 document.addEventListener('keydown', window.__symLockHandler, true);
-return {ok:true, watchlist_hidden: !!document.getElementById('db1rv-symlock-css')};
+return {ok:true, watchlist_visible: true, keylock: true};
 """
 
 
