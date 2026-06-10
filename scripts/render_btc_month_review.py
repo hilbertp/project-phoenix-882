@@ -50,6 +50,7 @@ from apps.worker.discovery_bet_1.pivots import detect_local_pivots
 from apps.worker.discovery_bet_1.swing_detector import clean_legs
 from apps.worker.discovery_bet_1.types import Candle
 from scripts.execute_fib_strategy import build_subbar_index, execute
+from scripts.ichimoku_regime import SETTLED, IchimokuRegime
 
 # ---- appearance (matches manual_review_ada_15m.py conventions) ----
 BG = "#0e1117"
@@ -166,7 +167,8 @@ def draw_candles_dates(ax, candles: list[Candle], width_days: float) -> None:
 def draw_card(setup_no: int, total: int, leg: dict, res: dict,
               candles_1h: list[Candle], idx_1h: dict[str, int],
               candles_5m: list[Candle], idx_5m: dict[str, int],
-              human: str | None, out_path: Path) -> None:
+              human: str | None, out_path: Path,
+              regime: str | None = None) -> None:
     parent, term = leg["parent_price"], leg["term_price"]
     lvl = lambda c: term + (parent - term) * c
     events = res["events"]
@@ -268,6 +270,9 @@ def draw_card(setup_no: int, total: int, leg: dict, res: dict,
     # ---- header ----
     match = (human == engine_cls) if human else None
     badge = ("MATCH" if match else f"DISPUTE (you: {human})") if human else "unreviewed"
+    if regime:
+        veto = regime not in SETTLED
+        badge += f"   ·   REGIME: {regime.upper()} {'→ VETO' if veto else '→ trade'}"
     badge_c = UP if match else (SL_C if human else FG)
     fig.suptitle(
         f"setup {setup_no}/{total}   ·   BTC 1H {leg['direction'].upper()}   ·   "
@@ -387,6 +392,7 @@ def main() -> None:
         raise SystemExit("nothing to render.")
 
     human = latest_human_labels()
+    ich = IchimokuRegime(c1h)
     out_dir = (REPO_ROOT / "artifacts/discovery_bet_1/manual_review_btc_1h_month"
                / f"cards_{window_tag}_{params_tag}")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -396,9 +402,12 @@ def main() -> None:
         cls = STATUS_CLASS.get(res["status"], res["status"])
         hum = human.get(leg["parent_ts"])
         tag = "" if (hum is None or hum == cls) else f"_DISPUTE_vs_{hum}"
-        name = f"card_{n:02d}_{cls}{tag}.png"
+        fi = idx.get(res["events"][0][1][:13] + ":00:00") if res["events"] else None
+        reg = ich.classify(fi) if fi is not None else None
+        veto_tag = "VETO_" if (reg and reg not in SETTLED) else ""
+        name = f"card_{n:02d}_{veto_tag}{cls}{tag}.png"
         draw_card(n, len(triggered), leg, res, c1h, idx, c5, idx5, hum,
-                  out_dir / name)
+                  out_dir / name, regime=reg)
         cards.append(name)
         print(f"  rendered {name}", flush=True)
 
