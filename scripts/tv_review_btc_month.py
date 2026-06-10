@@ -600,12 +600,31 @@ def main():
             time.sleep(0.04)
         return False
 
+    def _place_with_retry(leg, name, tries=10, delay=1.5):
+        """TradingView lazy-loads the Fib line-tool module; on a freshly loaded
+        chart the first createLineTool can throw 'LineToolFibRetracement is not
+        loaded'. Retry until TV fetches the chunk instead of crashing the whole
+        review session."""
+        for t in range(tries):
+            try:
+                if place_one(driver, leg, name, ctx):
+                    return True
+            except WebDriverException as exc:
+                if "not loaded" not in str(exc):
+                    raise
+                if t == 0:
+                    print("  TV fib tool module not loaded yet; retrying...",
+                          flush=True)
+            time.sleep(delay)
+        return False
+
     def show(i, extra=""):
         leg = setups[i]
         if not _clear_and_wait(max_ms=1000):
             n_left = driver.execute_script(COUNT_LINETOOLS_JS) or 0
             print(f"  warn: chart still has {n_left} drawings after clear", file=sys.stderr)
-        place_one(driver, leg, f"auto{i+1} << REVIEWING >> {i+1}/{len(setups)}", ctx)
+        if not _place_with_retry(leg, f"auto{i+1} << REVIEWING >> {i+1}/{len(setups)}"):
+            print(f"  warn: could not place fib for setup {i+1}", file=sys.stderr)
         time.sleep(0.2)
         driver.execute_script(REAPPLY_NAMES_JS)
         # Zoom to the setup. TV's fib-creation triggers an async re-render that
