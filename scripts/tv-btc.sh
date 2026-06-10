@@ -117,6 +117,17 @@ else
     echo "    (refresh failed; the existing CSV was kept -- continuing with it)"
 fi
 
+# 5m sub-bars are REQUIRED for honest outcomes (intra-candle event order);
+# without them the engine falls back to coarse 1H tie-breaks. Acquire once.
+CSV_5M="$REPO_ROOT/data/discovery_bet_1/binance_btcusdt_5m_full_history.csv"
+if [ ! -f "$CSV_5M" ]; then
+  echo "==> 5m history missing -- acquiring once (~6-10 min). Needed for"
+  echo "    intra-candle outcome resolution (which of SL/TP was hit first)."
+  env PYTHONPATH="$REPO_ROOT" "$VENV_PY" "$SCRIPT_DIR/acquire_long_asset.py" \
+    BTCUSDT 5m 2>&1 | tail -2 || \
+    echo "    (5m acquire failed; outcomes fall back to 1H tie-breaks)"
+fi
+
 echo
 echo "==> Starting BTC 1H WSAD review for month $MONTH (${EXTRA_ARGS[*]-defaults 6c/2x})..."
 echo "    Switch to your TradingView Chrome window. Use:"

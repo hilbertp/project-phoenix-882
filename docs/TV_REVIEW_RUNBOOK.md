@@ -23,6 +23,26 @@ That is the whole thing. `2026-05` = the calendar month to review (any `YYYY-MM`
 
 ---
 
+## New machine / collaborator quickstart (macOS or WSL2 Ubuntu)
+
+```bash
+git clone https://github.com/hilbertp/project-phoenix-882.git ~/project-phoenix-882
+cd ~/project-phoenix-882
+./scripts/bootstrap.sh        # venv + deps + Chrome check + ALL market data (one-time, ~10 min)
+PYTHONPATH=. .venv/bin/python scripts/place_fibs_tradingview.py login   # log into TV once (Email option)
+./scripts/tv-btc.sh 2026-05 --min-bars 6 --mult 4.0                     # review May at 6c/4x
+```
+
+Existing clone instead: `git pull --rebase --autostash origin main` then the
+same bootstrap (it only does what's missing). On WSL2, Chrome must be
+installed INSIDE the distro (`sudo apt install ./google-chrome-stable_current_amd64.deb`);
+WSLg puts its window on the Windows desktop. Each machine keeps its own
+TradingView login in `~/.phoenix-chrome-tv` — log in once, it persists.
+Verdicts append to `data/discovery_bet_1/human_labels.jsonl` (in git), so
+commit + push after a review session to share your grades.
+
+---
+
 ## Does it re-scrape / re-compute? (the FAQ)
 
 | Step | Past month (e.g. 2026-05) | Current month (e.g. 2026-06) |

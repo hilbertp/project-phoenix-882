@@ -1,0 +1,4 @@
+# Runtime deps for the TradingView review + backtest tooling.
+# Stdlib covers the detector/executor; these are the only externals.
+selenium>=4.20
+matplotlib>=3.8
