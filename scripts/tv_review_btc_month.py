@@ -262,6 +262,7 @@ def place_one(driver, leg, name, ctx):
         result = driver.execute_script(PLACE_FIB_JS, mapped, TV_INTERVAL, name, True)
         if isinstance(result, dict) and result.get("ok"):
             return True
+        print(f"  place failed (tz={tz}): {result}", flush=True)
     return False
 
 
@@ -435,37 +436,45 @@ def main():
         "try{const d=c._activeChartWidgetModel.value().model().mainSeries().data();"
         "const f=d.first(); return [d.size(), (f&&f.value[0])||0];}catch(e){return [0,0];}"
     )
+    def page_in_history():
+        """Page TV's lazy history back until the month is covered. Called once
+        at startup AND again whenever TV silently EVICTS old bars mid-session
+        (it does -- the series resets to ~recent bars and every placement
+        starts failing with 'anchor bar not found')."""
+        last_n = -1
+        stagnant_streak = 0
+        for attempt in range(25):
+            res = driver.execute_script(FIRST_BAR_JS) or [0, 0]
+            n = int(res[0] or 0)
+            first_ep = int(res[1] or 0)
+            if first_ep and first_ep <= need_back_to:
+                print(f"  history covers {month_label} ({n} bars, first "
+                      f"{datetime.fromtimestamp(first_ep, tz=timezone.utc).date()}), "
+                      f"proceeding.", flush=True)
+                return True
+            if n == last_n:
+                stagnant_streak += 1
+                if stagnant_streak >= 8:
+                    print(f"  TV stopped paging at {n} bars; proceeding.")
+                    return False
+            else:
+                stagnant_streak = 0
+            driver.execute_script(
+                "const c=window._exposed_chartWidgetCollection;"
+                "if(c){const ts=c._activeChartWidgetModel.value().model().timeScale();"
+                "if(ts.requestMoreHistoryPoints) ts.requestMoreHistoryPoints();"
+                "if(ts.scrollToFirstBar) ts.scrollToFirstBar();}"
+            )
+            if attempt % 3 == 0:
+                print(f"  attempt {attempt + 1:2}: {n} bars so far...", flush=True)
+            _loading(driver, f"Paging TV history: {n} bars (attempt {attempt + 1}/25)...")
+            last_n = n
+            time.sleep(1.0)
+        return False
+
     print(f"==> paging TV history until {month_label} is covered...", flush=True)
     _loading(driver, f"Paging TV history to cover {month_label}...")
-    last_n = -1
-    stagnant_streak = 0
-    for attempt in range(25):
-        res = driver.execute_script(FIRST_BAR_JS) or [0, 0]
-        n = int(res[0] or 0)
-        first_ep = int(res[1] or 0)
-        if first_ep and first_ep <= need_back_to:
-            print(f"  history covers {month_label} ({n} bars, first "
-                  f"{datetime.fromtimestamp(first_ep, tz=timezone.utc).date()}), "
-                  f"proceeding.", flush=True)
-            break
-        if n == last_n:
-            stagnant_streak += 1
-            if stagnant_streak >= 8:
-                print(f"  TV stopped paging at {n} bars; proceeding.")
-                break
-        else:
-            stagnant_streak = 0
-        driver.execute_script(
-            "const c=window._exposed_chartWidgetCollection;"
-            "if(c){const ts=c._activeChartWidgetModel.value().model().timeScale();"
-            "if(ts.requestMoreHistoryPoints) ts.requestMoreHistoryPoints();"
-            "if(ts.scrollToFirstBar) ts.scrollToFirstBar();}"
-        )
-        if attempt % 3 == 0:
-            print(f"  attempt {attempt + 1:2}: {n} bars so far...", flush=True)
-        _loading(driver, f"Paging TV history: {n} bars (attempt {attempt + 1}/25)...")
-        last_n = n
-        time.sleep(1.0)
+    page_in_history()
 
     print("==> reading TV's loaded bar range + filtering setups...", flush=True)
     _loading(driver, "Reading TV bar range + filtering setups...")
@@ -623,8 +632,16 @@ def main():
         if not _clear_and_wait(max_ms=1000):
             n_left = driver.execute_script(COUNT_LINETOOLS_JS) or 0
             print(f"  warn: chart still has {n_left} drawings after clear", file=sys.stderr)
-        if not _place_with_retry(leg, f"auto{i+1} << REVIEWING >> {i+1}/{len(setups)}"):
-            print(f"  warn: could not place fib for setup {i+1}", file=sys.stderr)
+        name = f"auto{i+1} << REVIEWING >> {i+1}/{len(setups)}"
+        # Quick attempt first; if the anchor bars can't be found, TV has EVICTED
+        # the old history (it silently resets the series to recent bars). Page
+        # the month back in and retry properly.
+        if not _place_with_retry(leg, name, tries=2, delay=1.0):
+            print(f"  setup {i+1}: anchors not found -- TV evicted history; "
+                  f"re-paging...", flush=True)
+            page_in_history()
+            if not _place_with_retry(leg, name, tries=8, delay=1.5):
+                print(f"  warn: could not place fib for setup {i+1}", file=sys.stderr)
         time.sleep(0.2)
         driver.execute_script(REAPPLY_NAMES_JS)
         # Zoom to the setup. TV's fib-creation triggers an async re-render that
