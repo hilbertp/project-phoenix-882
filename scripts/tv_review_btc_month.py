@@ -659,6 +659,18 @@ def main():
 
     def show(i, extra=""):
         leg = setups[i]
+        # INSTANT acknowledgment: flip the panel to 'loading' the moment the
+        # action is consumed, BEFORE the (possibly slow) place/zoom work. A
+        # keypress that produces no visible change within ~200ms reads as
+        # 'broken' even when the machinery behind it is grinding correctly.
+        try:
+            driver.execute_script(
+                "window.__reviewStatus(arguments[0], arguments[1]);",
+                f"BTC 1H {month_label} {config_tag}  {i + 1}/{len(setups)}",
+                "<b style='color:#f0b90b'>... loading setup, give me a few "
+                "seconds (auto-recovery can take ~1 min)</b>")
+        except Exception:
+            pass
         if not _clear_and_wait(max_ms=1000):
             n_left = driver.execute_script(COUNT_LINETOOLS_JS) or 0
             print(f"  warn: chart still has {n_left} drawings after clear", file=sys.stderr)
