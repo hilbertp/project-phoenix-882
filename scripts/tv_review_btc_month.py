@@ -165,7 +165,40 @@ window.__symLockHandler = function(e){
   }
 };
 document.addEventListener('keydown', window.__symLockHandler, true);
-return {ok:true, watchlist_visible: true, keylock: true};
+
+// --- Ad-blocker-nag watchdog -------------------------------------------
+// TradingView intermittently throws a full-page 'Ad blocker detected'
+// modal (the user's network blocks ads, e.g. VPN NetShield). It swallows
+// every click, freezes feature loading (the lazy fib-module wedge!), and
+// reappears on each page load -- so it must be killed continuously, not
+// once. Scan every 2s; text-match so nothing legitimate gets removed.
+function __killAdNag(doc) {
+  let killed = 0;
+  try {
+    const root = doc.getElementById('overlap-manager-root');
+    const pools = [];
+    if (root) pools.push(...Array.from(root.children));
+    pools.push(...Array.from(doc.querySelectorAll('div[data-dialog-name]')));
+    for (const el of pools) {
+      const txt = el.textContent || '';
+      if (/ad.?blocker|allow ads|ad-supported|go ad-free/i.test(txt)) {
+        el.remove(); killed++;
+      }
+    }
+    if (killed) { doc.body.style.overflow = ''; }
+  } catch (e) {}
+  return killed;
+}
+if (window.__adNagKiller) { clearInterval(window.__adNagKiller); }
+window.__adNagKiller = setInterval(function () {
+  let n = __killAdNag(document);
+  for (const f of Array.from(document.querySelectorAll('iframe'))) {
+    try { if (f.contentDocument) n += __killAdNag(f.contentDocument); } catch (e) {}
+  }
+  if (n) console.log('db1rv: removed ad-blocker nag overlay x' + n);
+}, 2000);
+
+return {ok:true, watchlist_visible: true, keylock: true, adnag_watchdog: true};
 """
 
 
