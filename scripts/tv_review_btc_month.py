@@ -627,21 +627,55 @@ def main():
             time.sleep(delay)
         return False
 
+    def reinit_chart(reason):
+        """Last-resort recovery: a FULL page reload + re-init. Cures every
+        known wedge (lazy fib-module assertion that retries can't fix, evicted
+        history that re-paging can't fix, broken panel DOM) at the cost of
+        ~30s. The python-side review state (setups, index, verdicts) survives;
+        only the browser side is rebuilt."""
+        nonlocal last_seq
+        print(f"==> chart wedged ({reason}); full page reload + re-init...",
+              flush=True)
+        navigate_to_btc(driver)
+        try:
+            driver.execute_script(REMOVE_VOLUME_JS)
+        except Exception:
+            pass
+        page_in_history()
+        inject = driver.execute_script(ADA_INJECT_PANEL_JS)
+        driver.execute_script(
+            "const t=document.getElementById('db1rv-title');"
+            "if(t) t.textContent = arguments[0];",
+            f"BTC 1H Review -- {month_label} ({config_tag})"
+        )
+        driver.execute_script("window.__reviewSeq = 0; window.__reviewAction = null;")
+        last_seq = 0
+        try:
+            driver.execute_script(SYMBOL_LOCK_JS)
+            driver.execute_script(REMOVE_LOADING_JS)
+        except Exception:
+            pass
+        print(f"  reinit done: {inject}", flush=True)
+
     def show(i, extra=""):
         leg = setups[i]
         if not _clear_and_wait(max_ms=1000):
             n_left = driver.execute_script(COUNT_LINETOOLS_JS) or 0
             print(f"  warn: chart still has {n_left} drawings after clear", file=sys.stderr)
         name = f"auto{i+1} << REVIEWING >> {i+1}/{len(setups)}"
-        # Quick attempt first; if the anchor bars can't be found, TV has EVICTED
-        # the old history (it silently resets the series to recent bars). Page
-        # the month back in and retry properly.
+        # Escalation ladder, each rung cures a different wedge:
+        #   1. quick retry        (transient)
+        #   2. re-page history    (TV evicted old bars)
+        #   3. page reload+reinit (lazy-module assertion / broken page state)
         if not _place_with_retry(leg, name, tries=2, delay=1.0):
-            print(f"  setup {i+1}: anchors not found -- TV evicted history; "
-                  f"re-paging...", flush=True)
+            print(f"  setup {i+1}: placement failing; re-paging history...",
+                  flush=True)
             page_in_history()
-            if not _place_with_retry(leg, name, tries=8, delay=1.5):
-                print(f"  warn: could not place fib for setup {i+1}", file=sys.stderr)
+            if not _place_with_retry(leg, name, tries=3, delay=1.0):
+                reinit_chart(f"setup {i+1} placement still failing after re-page")
+                if not _place_with_retry(leg, name, tries=6, delay=1.5):
+                    print(f"  warn: could not place fib for setup {i+1}",
+                          file=sys.stderr)
         time.sleep(0.2)
         driver.execute_script(REAPPLY_NAMES_JS)
         # Zoom to the setup. TV's fib-creation triggers an async re-render that
