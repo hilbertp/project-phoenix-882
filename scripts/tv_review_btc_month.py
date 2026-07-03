@@ -373,7 +373,14 @@ def parse_month(s: str) -> tuple[str, str, str]:
 def main():
     global MIN_BARS, ATR_MULT
     ap = argparse.ArgumentParser()
-    ap.add_argument("--month", required=True, help="YYYY-MM, e.g. 2026-05")
+    win = ap.add_mutually_exclusive_group(required=True)
+    win.add_argument("--month", help="YYYY-MM, e.g. 2026-05")
+    win.add_argument("--last-days", type=int,
+                     help="trailing window in days (e.g. 92 for ~3 months)")
+    ap.add_argument("--exit-plan", choices=["runner", "rest50"], default="runner",
+                    help="runner = TP1 25%%/TP2 60%%/TP3 15%% at 0.0 (default); "
+                         "rest50 = TP1 25%% at 0.882 + SL->entry, remaining 75%% "
+                         "all out at 0.5, no runner")
     ap.add_argument("--min-bars", type=int, default=6,
                     help="detector minimum bars per leg (default 6)")
     ap.add_argument("--mult", type=float, default=2.0,
@@ -384,7 +391,21 @@ def main():
     _rf.DETECTOR_PARAMS["min_bars"] = MIN_BARS
     _rf.DETECTOR_PARAMS["atr_mult"] = ATR_MULT
     config_tag = f"{MIN_BARS}c/{ATR_MULT:g}x"
-    month_label, cutoff_start, cutoff_end = parse_month(args.month)
+    exec_kwargs = {}
+    if args.exit_plan == "rest50":
+        exec_kwargs = {"p1": 0.25, "p2": 0.75, "p3": 0.0}
+        config_tag += " rest50"
+    if args.month:
+        month_label, cutoff_start, cutoff_end = parse_month(args.month)
+        window_tag = args.month
+    else:
+        # trailing window off the CSV's last bar; label doubles as month tag
+        _last = load_csv(CSV_PATH)[-1].source_timestamp
+        _lo = (datetime.fromisoformat(_last)
+               - __import__("datetime").timedelta(days=args.last_days))
+        cutoff_start, cutoff_end = _lo.isoformat(), _last
+        month_label = f"last {args.last_days}d"
+        window_tag = f"last{args.last_days}d"
 
     if not CSV_PATH.exists():
         raise SystemExit(f"missing {CSV_PATH}; run acquire_long_asset BTCUSDT 1h first.")
@@ -422,7 +443,7 @@ def main():
 
     for leg in legs:
         _annotate_span_depth(leg, idx_map, atr)
-        _annotate_outcome(leg, candles, idx_map, subbars=subbars)
+        _annotate_outcome(leg, candles, idx_map, subbars=subbars, exec_kwargs=exec_kwargs)
 
     include_misses = os.environ.get("PHOENIX_REVIEW_INCLUDE_MISSES") in ("1", "true", "yes")
     if not include_misses:
@@ -839,7 +860,8 @@ def main():
                     "interval": "1h",
                     "min_bars": MIN_BARS,
                     "mult": ATR_MULT,
-                    "month": args.month,
+                    "month": window_tag,
+                    "exit_plan": args.exit_plan,
                     "scored_outcome": leg.get("outcome_kind"),
                     "scored_R": leg.get("outcome_r"),
                 }
@@ -871,7 +893,7 @@ def main():
         ended_at = datetime.now(timezone.utc)
         OUT_DIR.mkdir(parents=True, exist_ok=True)
         ts = ended_at.strftime("%Y%m%dT%H%M%S")
-        report_path = OUT_DIR / f"SESSION_BTC_{args.month}_{MIN_BARS}c{ATR_MULT:g}x_{ts}.md"
+        report_path = OUT_DIR / f"SESSION_BTC_{window_tag}_{MIN_BARS}c{ATR_MULT:g}x_{args.exit_plan}_{ts}.md"
         # Reuse the ADA markdown writer -- the schema is the same.
         from scripts.tv_review_ada_15m import write_session_report
         write_session_report(setups, verdicts, started_at, ended_at, report_path)
