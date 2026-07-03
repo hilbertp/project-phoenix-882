@@ -98,21 +98,27 @@ if (existing) existing.remove();
 const div = document.createElement('div');
 div.id = 'db1rv-loading';
 div.style.cssText = (
-    'position:fixed; top:120px; right:6px; z-index:99999;' +
-    'background:#0d1117; color:#e6edf3;' +
-    'border:1px solid #30363d; border-radius:6px;' +
-    'padding:10px 12px; font:13px -apple-system,Segoe UI,sans-serif;' +
-    'width:260px; box-shadow:0 4px 12px rgba(0,0,0,0.5);'
+    'position:fixed; inset:0; z-index:2147483646;' +
+    'background:rgba(10,13,18,0.88); backdrop-filter:blur(2px);' +
+    'display:flex; flex-direction:column; align-items:center;' +
+    'justify-content:center; color:#e6edf3;' +
+    'font:15px -apple-system,Segoe UI,sans-serif;'
 );
-const title = document.createElement('div');
-title.style.cssText = 'font-weight:600; margin-bottom:4px; color:#7d8590;';
-title.textContent = 'Phoenix Review (loading)';
-const text = document.createElement('div');
-text.id = 'db1rv-loading-text';
-text.textContent = arguments[0] || 'Initializing...';
-div.appendChild(title);
-div.appendChild(text);
-document.body.appendChild(div);
+div.innerHTML =
+  '<style>@keyframes db1spin{to{transform:rotate(360deg)}}</style>' +
+  '<div style="width:44px;height:44px;border:4px solid #30363d;' +
+      'border-top-color:#2962ff;border-radius:50%;' +
+      'animation:db1spin 0.9s linear infinite;margin-bottom:22px"></div>' +
+  '<div style="font-size:19px;font-weight:700;margin-bottom:8px">' +
+      'Phoenix Review — preparing your session</div>' +
+  '<div id="db1rv-loading-text" style="font-size:15px;color:#f0b90b;' +
+      'margin-bottom:14px"></div>' +
+  '<div style="font-size:13px;color:#8b949e;max-width:460px;text-align:center;' +
+      'line-height:1.5">Nothing is broken — startup and self-recovery take ' +
+      '30–90 seconds. The review panel appears in the top-left when ready.</div>';
+document.getElementById('db1rv-loading-text').textContent =
+    arguments[0] || 'Initializing...';
+(document.body || document.documentElement).appendChild(div);
 return true;
 """
 
@@ -459,6 +465,7 @@ def main():
 
     print("==> attaching to Chrome on :9222...", flush=True)
     driver = attach_chrome()
+    _loading(driver, "Connected. Checking the chart...")
     print(f"  current URL: {driver.current_url[:80]}", flush=True)
     has_layout_id = "/chart/HrY4" in driver.current_url or \
                     bool(re.search(r"/chart/[A-Za-z0-9]{6,}/", driver.current_url))
@@ -781,7 +788,10 @@ def main():
                            verdict=verdicts.get(i)),
         )
 
+    # Resume at the first unreviewed setup (verdicts reloaded above).
     i = 0
+    while i in verdicts and i + 1 < len(setups):
+        i += 1
     last_seq = 0
     show(i)
 
@@ -824,6 +834,7 @@ def main():
                 if consecutive_errors >= 40:  # ~20s of solid failure
                     print(f"\n==> browser unreachable for {consecutive_errors} "
                           f"polls; ending session. ({str(exc)[:80]})", flush=True)
+                    globals()["_BROWSER_LOST"] = True
                     break
                 time.sleep(0.5)
                 continue
@@ -938,3 +949,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+    if globals().get("_BROWSER_LOST"):
+        sys.exit(2)   # tells the supervisor wrapper to restart chrome + resume
