@@ -13,6 +13,7 @@ __pycache__/
 !/data/discovery_bet_1/
 !/data/discovery_bet_1/README.md
 !/data/discovery_bet_1/human_labels.jsonl
+!/data/discovery_bet_1/engine_predictions.jsonl
 /artifacts/**
 !/artifacts/.gitkeep
 !/artifacts/discovery_bet_1/

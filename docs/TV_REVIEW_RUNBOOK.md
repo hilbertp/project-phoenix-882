@@ -108,6 +108,31 @@ swing, `wrong_kind=outcome`+expected=corrected class. Win rate =
 
 ---
 
+## The validation loop (how engine mistakes are found and killed)
+
+Never trust a new configuration's numbers until this loop has run once:
+
+1. **Freeze predictions first**: `record_predictions.py` with the SAME
+   parameters as the review → appends to `engine_predictions.jsonl` (in git).
+   Pre-registered: the engine can't be quietly re-run after the fact.
+2. **Human reviews on TV** (`tv-btc.sh ...`) → verdicts to `human_labels.jsonl`.
+3. **Compare**: `compare_predictions.py --run-id <id>` → every mismatch
+   classified (OVER-SCORED / UNDER-SCORED / SETUP-REJECTED).
+4. **Absorb**: for each mismatch, print the 5m event tape, decide whether the
+   RULE or the LABEL is wrong (the human re-checks ambiguous candles at 5m —
+   their TV plan can't load old intraday, ours can), then either fix the
+   engine or correct the label. Both land in
+   `tests/test_execute_outcome_ground_truth.py`, which replays every verdict
+   forever after.
+
+This loop is why the engine went 12/27 → 26/27 vs human eyes in May 2026.
+Mistake taxonomy learned so far (all fixed, all fixture-locked): entry-bar
+stop exempted; TP-before-SL tie on spanning bars; close-based (not touch)
+break-even stop; missing sub-bar resolution; micro-graze arming BE off a
+single bar. The residual mistake class that is NOT an engine bug:
+SETUP-REJECTED — the detector trading legs a human wouldn't draw. That is
+detector taste, tracked separately via `wrong_kind=setup` labels.
+
 ## Hard constraints (violating these cost hours — do not relearn)
 
 1. **NEVER attach a second selenium session to the running debug Chrome** —
