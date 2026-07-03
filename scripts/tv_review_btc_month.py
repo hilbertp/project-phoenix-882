@@ -438,6 +438,10 @@ def main():
                     help="legs = classic zigzag legs; scan = from-scratch "
                          "running-extreme candidates (finds shallow-entry "
                          "pullbacks that never flip the zigzag)")
+    ap.add_argument("--only-keys",
+                    help="comma-separated setup_keys (parent_ts|term_ts) to "
+                         "review, in the given order; skips the miss filter "
+                         "(for targeted re-review / anchor comparison)")
     ap.add_argument("--min-bars", type=int, default=6,
                     help="detector minimum bars per leg (default 6)")
     ap.add_argument("--mult", type=float, default=2.0,
@@ -512,8 +516,19 @@ def main():
         _annotate_span_depth(leg, idx_map, atr)
         _annotate_outcome(leg, candles, idx_map, subbars=subbars, exec_kwargs=exec_kwargs)
 
+    if args.only_keys:
+        want = [k.strip() for k in args.only_keys.split(",") if k.strip()]
+        by_key = {f"{l['parent_ts']}|{l['term_ts']}": l for l in legs}
+        not_found = [k for k in want if k not in by_key]
+        if not_found:
+            raise SystemExit(f"--only-keys not in the {args.universe} universe "
+                             f"for {month_label}: {not_found}")
+        legs = [by_key[k] for k in want]
+        print(f"==> --only-keys: reviewing {len(legs)} explicitly requested "
+              f"setups (miss filter skipped).")
+
     include_misses = os.environ.get("PHOENIX_REVIEW_INCLUDE_MISSES") in ("1", "true", "yes")
-    if not include_misses:
+    if not include_misses and not args.only_keys:
         triggered = [l for l in legs if l.get("outcome_kind") != "miss"]
         n_missed = len(legs) - len(triggered)
         print(f"==> filtered out {n_missed} miss / shrug setups (0.{args.entry} never tagged). "

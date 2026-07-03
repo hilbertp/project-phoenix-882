@@ -129,19 +129,27 @@ def refined_pivots(candles: list[Candle], atr: list, mult: float) -> list[tuple]
 def candidates_from_pivots(candles, atr, piv, min_bars, mult):
     """Every (parent, running-extreme) snapshot clearing the gates.
 
-    For each phase P -> next pivot (or data end for the open tail), each bar
-    strictly deepening the extreme yields a candidate (P, that bar). Gates:
-    span >= min_bars, depth >= mult * atr[terminal bar]. Candidates therefore
-    include every classic leg (its final terminal deepens the extreme last).
+    For each pivot parent P, walk forward until the PARENT ANCHOR IS BREACHED
+    (a candle beyond P's price) -- NOT merely until the next zigzag pivot.
+    Each bar strictly deepening the running extreme yields a candidate
+    (P, that bar). This lets terminals extend across micro-flips to later,
+    truer extremes (PO ruling 2026-07-03: rejected setups were 'near-sighted'
+    -- the second anchor belonged one or two extremes further out). The
+    clean-leg invariant holds by construction: interior bars never breach the
+    parent (window rule) nor the terminal (it is the running extreme).
+    Gates: span >= min_bars, depth >= mult * atr[terminal bar]. Classic legs
+    remain a strict subset (their terminals are running extremes within the
+    window).
     """
     n = len(candles)
     out = []
     for j, (pi, pp, pk) in enumerate(piv):
-        end = piv[j + 1][0] if j + 1 < len(piv) else n - 1
         down = pk == "high"
         run_ext = None
-        for k in range(pi + 1, end + 1):
+        for k in range(pi + 1, n):
             c = candles[k]
+            if (c.high > pp) if down else (c.low < pp):
+                break  # parent breached -- the swing's origin is invalidated
             ext = c.low if down else c.high
             deeper = run_ext is None or (ext < run_ext if down else ext > run_ext)
             if not deeper:
