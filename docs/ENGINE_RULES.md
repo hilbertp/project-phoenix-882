@@ -57,23 +57,32 @@ green — that test replays every verdict the user ever gave.
   inside it — never guessed when finer data exists. *(Why: on one setup even
   the 15-minute view gave the wrong order; only 5m agreed with the user's
   reading. 5m > 15m > coarser.)*
-- **C2. The candle that fills your entry can stop you out.** If the same
-  candle that triggers your entry also reaches the stop price, that is a real
-  −1R loss. This is certain, not guessed: price beyond your entry can only
+- **C2. The candle that fills your entry can stop you out — judged on the
+  5-minute candle, not the whole hour.** Price beyond your entry can only
   have traded AFTER you were in (before the fill, the market hadn't fallen
-  that far yet). *(Why: the old engine skipped the entry candle entirely, so
-  same-candle stop-outs were silently counted as surviving trades — the
-  single biggest source of fake wins in the May audit.)*
+  that far yet) — so a stop-touch on the fill candle is a real loss, not a
+  guess. **The one extra step (user ruling, 2026-07-03):** when a 1-HOUR
+  candle shows both your entry and the stop, that alone doesn't decide the
+  trade — the price may first have shot up to 0.882 (25% banked, stop moved
+  to entry) and only THEN fallen through 1.05. In that case the trade ended
+  at break-even (+~0.14R), not −1R. The 5-minute candles inside the hour
+  almost always reveal which one happened, and the engine reads them. Only
+  when a single 5-MINUTE candle contains both entry and stop does the
+  conservative loss call apply. *(Why: the old engine skipped the entry
+  candle entirely — the biggest source of fake wins in the May audit.
+  Locked by tests/test_execute_edge_cases.py, which proves the same hour
+  scores break-even with 5m data and LOSS without it.)*
 - **C3. But the fill candle can never give you profit.** A touch of the
   target inside the fill candle doesn't count — that touch may have happened
   BEFORE your entry executed, and we can't know. Profit needs a later candle.
   *(Why: the user rejected entry-candle target credits on review.)*
 - **C4. One candle poking both entry and first target = nothing happened.**
   When a single 5-minute candle touches the first target AND dips back to the
-  entry price, that's noise, not a real move: no profit is taken, the stop
-  stays at 1.05, the trade continues as if untouched. *(Why: every such
-  "graze" the user graded had behaved as if the target was never really
-  reached.)*
+  entry price, that's noise, not a real move: no profit is taken, the stop is
+  NOT moved, the trade continues under the original 1.05 stop — **and if it
+  gets stopped out afterwards, we take the L** (full −1R). *(User ruling
+  2026-07-03: rare edge case, treat as no-TP1 / no stop-drag. Locked by
+  tests/test_execute_edge_cases.py.)*
 - **C5. A clean touch of the first target arms the protection.** When a
   candle reaches the first target WITHOUT dipping back to entry, 25% profit
   is banked and the stop moves up to the entry price.
