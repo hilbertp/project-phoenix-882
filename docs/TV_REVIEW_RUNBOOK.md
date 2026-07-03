@@ -114,7 +114,13 @@ Never trust a new configuration's numbers until this loop has run once:
 
 1. **Freeze predictions first**: `record_predictions.py` with the SAME
    parameters as the review → appends to `engine_predictions.jsonl` (in git).
-   Pre-registered: the engine can't be quietly re-run after the fact.
+   **COMMIT the freeze BEFORE reviewing** — the git timestamp is the seal;
+   nothing in code stops a dishonest re-freeze after the fact (audited
+   2026-07-03). Never mix `score_labeled_setups.py` numbers into blind
+   results (it scores the human-approved universe only). WARNING for future
+   engineers: `CORRECTED_SWINGS` in place_fibs_tradingview.py is human
+   feedback baked into source — currently unreachable from the scoring path;
+   feeding it into execute() in any backtest would be label leakage.
 2. **Human reviews on TV** (`tv-btc.sh ...`) → verdicts to `human_labels.jsonl`.
 3. **Compare**: `compare_predictions.py --run-id <id>` → every mismatch
    classified (OVER-SCORED / UNDER-SCORED / SETUP-REJECTED).
