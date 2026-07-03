@@ -34,6 +34,10 @@ Panel keys: **W**=setup+outcome correct · **S→R**=not a real swing ·
 **S→F→1/2/3/L/M**=real setup, corrected outcome · **A/D**=prev/next ·
 **Enter**=finish (writes a markdown report + on-chart overlay).
 
+The wrapper mirrors all output to **`/tmp/tv-btc.log`** automatically. For
+unattended/scripted launches, the ready signal to poll for is the line
+`==> Panel ready. Press W/S/A/D/Enter in the TV chart window.`
+
 ### 2. Backtest grid (the standard results table, no browser)
 
 ```bash
