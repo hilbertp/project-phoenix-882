@@ -678,6 +678,20 @@ def main():
                 if t == 0:
                     print("  TV fib tool module not loaded yet; retrying...",
                           flush=True)
+                # Pre-warm: TV's own hotkey Alt+F selects the Fib Retracement
+                # tool -- the REAL human code path, which forces the lazy
+                # module to load. (createLineTool alone never triggers the
+                # fetch, and the internal selectLineTool APIs proved absent.)
+                # Escape afterwards so the user isn't left in drawing mode.
+                try:
+                    from selenium.webdriver.common.action_chains import ActionChains
+                    from selenium.webdriver.common.keys import Keys
+                    ActionChains(driver).key_down(Keys.ALT).send_keys("f") \
+                        .key_up(Keys.ALT).perform()
+                    time.sleep(1.2)
+                    ActionChains(driver).send_keys(Keys.ESCAPE).perform()
+                except WebDriverException:
+                    pass
             time.sleep(delay)
         return False
 
