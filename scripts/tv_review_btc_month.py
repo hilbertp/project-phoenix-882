@@ -434,6 +434,10 @@ def main():
                          "this config (deliberate blind re-grade). NOTE: also "
                          "disables crash-resume -- a mid-session relaunch "
                          "starts over.")
+    ap.add_argument("--universe", choices=["legs", "scan"], default="legs",
+                    help="legs = classic zigzag legs; scan = from-scratch "
+                         "running-extreme candidates (finds shallow-entry "
+                         "pullbacks that never flip the zigzag)")
     ap.add_argument("--min-bars", type=int, default=6,
                     help="detector minimum bars per leg (default 6)")
     ap.add_argument("--mult", type=float, default=2.0,
@@ -473,12 +477,21 @@ def main():
     print(f"==> {month_label} @ {config_tag}: filtering setups with parent_ts in "
           f"[{cutoff_start}, {cutoff_end}]", flush=True)
 
-    legs = [l for l in _clean_legs(candles, atr, pivots,
-                                   min_bars=MIN_BARS, mult=ATR_MULT)
+    if args.universe == "scan":
+        from scripts.scan_entry_universe import (
+            candidates_from_pivots, refined_pivots,
+        )
+        pool = candidates_from_pivots(
+            candles, atr, refined_pivots(candles, atr, ATR_MULT),
+            MIN_BARS, ATR_MULT)
+    else:
+        pool = _clean_legs(candles, atr, pivots,
+                           min_bars=MIN_BARS, mult=ATR_MULT)
+    legs = [l for l in pool
             if l["term_ts"] in idx_map
             and l["parent_ts"] >= cutoff_start
             and l["parent_ts"] <= cutoff_end]
-    print(f"==> {len(legs)} clean legs in {month_label}")
+    print(f"==> {len(legs)} {args.universe}-universe candidates in {month_label}")
 
     # Sub-bars resolve intra-1H event order (which of SL/TP was hit first) from
     # data instead of conservative guessing; finest available granularity wins.
@@ -947,6 +960,7 @@ def main():
                     "month": window_tag,
                     "entry": args.entry,
                     "exit_plan": args.exit_plan,
+                    "universe": args.universe,
                     "scored_outcome": leg.get("outcome_kind"),
                     "scored_R": leg.get("outcome_r"),
                 }
@@ -978,7 +992,8 @@ def main():
         ended_at = datetime.now(timezone.utc)
         OUT_DIR.mkdir(parents=True, exist_ok=True)
         ts = ended_at.strftime("%Y%m%dT%H%M%S")
-        report_path = OUT_DIR / f"SESSION_BTC_{window_tag}_{MIN_BARS}c{ATR_MULT:g}x_e{args.entry}_{args.exit_plan}_{ts}.md"
+        u = "_scan" if args.universe == "scan" else ""
+        report_path = OUT_DIR / f"SESSION_BTC_{window_tag}_{MIN_BARS}c{ATR_MULT:g}x_e{args.entry}{u}_{args.exit_plan}_{ts}.md"
         # Reuse the ADA markdown writer -- the schema is the same.
         from scripts.tv_review_ada_15m import write_session_report
         write_session_report(setups, verdicts, started_at, ended_at, report_path)

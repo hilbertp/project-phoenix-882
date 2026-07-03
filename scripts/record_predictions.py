@@ -29,6 +29,7 @@ from apps.worker.discovery_bet_1.pivots import detect_local_pivots
 from apps.worker.discovery_bet_1.swing_detector import clean_legs
 from apps.worker.discovery_bet_1.types import Candle
 from scripts.execute_fib_strategy import REGIMES, build_subbar_index, execute
+from scripts.scan_entry_universe import candidates_from_pivots, refined_pivots
 
 OUT = REPO_ROOT / "data/discovery_bet_1/engine_predictions.jsonl"
 CLS = {"tp1_then_scratch": "TP1", "tp2_then_scratch": "TP2", "tp3_full": "TP3",
@@ -54,6 +55,9 @@ def main() -> None:
     ap.add_argument("--mult", type=float, default=2.0)
     ap.add_argument("--entry", choices=["941", "882", "786"], default="941")
     ap.add_argument("--exit-plan", choices=["runner", "rest50"], default="runner")
+    ap.add_argument("--universe", choices=["legs", "scan"], default="legs",
+                    help="legs = classic zigzag legs; scan = from-scratch "
+                         "running-extreme candidates (scan_entry_universe)")
     args = ap.parse_args()
 
     c1h = load_csv(REPO_ROOT / "data/discovery_bet_1/binance_btcusdt_1h_full_history.csv")
@@ -81,8 +85,15 @@ def main() -> None:
     now = datetime.now(timezone.utc).isoformat()
     run_id = (f"{window}_{args.min_bars}c{args.mult:g}x_e{args.entry}"
               f"_{args.exit_plan}")
-    legs = [l for l in clean_legs(c1h, atr, piv,
-                                  min_bars=args.min_bars, mult=args.mult)
+    if args.universe == "scan":
+        run_id += "_scan"
+        pool = candidates_from_pivots(
+            c1h, atr, refined_pivots(c1h, atr, args.mult),
+            args.min_bars, args.mult)
+    else:
+        pool = clean_legs(c1h, atr, piv,
+                          min_bars=args.min_bars, mult=args.mult)
+    legs = [l for l in pool
             if l["term_ts"] in idx and lo <= l["parent_ts"] <= hi]
     n = 0
     with OUT.open("a", encoding="utf-8") as fh:
