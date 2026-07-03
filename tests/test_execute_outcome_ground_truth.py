@@ -90,7 +90,6 @@ def _load_labeled_setups():
 # test is the only evidence; they await the user's blessing. Panel setup
 # numbers of the May-2026 session in comments.
 CONTESTED = {
-    "2026-05-12T16:00:00",   # setup  8: 5m graze -> unmanaged; engine vs stale LOSS label
     "2026-05-13T18:00:00",   # setup  9: clean separate-bar TP1 tag at 5m -> scratch vs LOSS
     "2026-05-17T01:00:00",   # setup 12: separate-bar TP1+BE at 5m -> scratch (label agrees)
     "2026-05-17T14:00:00",   # setup 13: graze -> unmanaged -> SL; engine LOSS vs stale TP1
