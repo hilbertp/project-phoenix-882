@@ -14,7 +14,7 @@ Or via the wrapper:
 
 The CSV is re-acquired by the wrapper before each run so it always covers
 the requested month. The script then walks setups whose parent_ts falls
-inside that month, scores against the 0.941 entry, filters out misses,
+inside that month, scores against the --entry regime (default 0.941), filters out misses,
 injects the WSAD panel, and renders an end-of-session report on the chart.
 """
 from __future__ import annotations
@@ -503,7 +503,7 @@ def main():
     if not include_misses:
         triggered = [l for l in legs if l.get("outcome_kind") != "miss"]
         n_missed = len(legs) - len(triggered)
-        print(f"==> filtered out {n_missed} miss / shrug setups (0.941 never tagged). "
+        print(f"==> filtered out {n_missed} miss / shrug setups (0.{args.entry} never tagged). "
               f"{len(triggered)} triggered setups remain.")
         print(f"    set PHOENIX_REVIEW_INCLUDE_MISSES=1 to keep them.")
         legs = triggered
