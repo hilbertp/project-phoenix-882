@@ -342,7 +342,8 @@ _ADA_OUTCOME_STYLE = {
 }
 
 
-def _ada_info_html(i: int, n: int, leg: dict, extra: str = "", verdict: str | None = None) -> str:
+def _ada_info_html(i: int, n: int, leg: dict, extra: str = "", verdict: str | None = None,
+                   min_bars: int = 6, min_atr: float = 2.0) -> str:
     """ADA panel info: ONE colored thing (the outcome), everything else neutral.
 
     Layout (top to bottom):
@@ -408,18 +409,16 @@ def _ada_info_html(i: int, n: int, leg: dict, extra: str = "", verdict: str | No
 
     # Gate-clear line: NEUTRAL gray (user explicitly asked: don't color this)
     if span != "?":
-        min_bars = 6
-        min_atr = 2.0
         span_ok = (isinstance(span, int) and span >= min_bars)
         depth_ok = (depth >= min_atr)
         if span_ok and depth_ok:
-            gate_text = f"clears gates (&ge;{min_bars}c, &ge;{int(min_atr)}&times; ATR)"
+            gate_text = f"clears gates (&ge;{min_bars}c, &ge;{min_atr:g}&times; ATR)"
         else:
             why = []
             if not span_ok:
                 why.append(f"{span}c &lt; {min_bars}")
             if not depth_ok:
-                why.append(f"{depth:.1f} &lt; {int(min_atr)}&times; ATR")
+                why.append(f"{depth:.1f} &lt; {min_atr:g}&times; ATR")
             gate_text = f"below gate: {' &amp; '.join(why)}"
         parts.append(
             f"<div style='font-size:10px;color:#9aa4b2;margin-bottom:2px'>{gate_text}</div>"

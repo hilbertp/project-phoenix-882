@@ -36,7 +36,7 @@ REGIMES = [
     {"slug": "x882", "label": "0.882 entry",
      "params": dict(entry_c=0.882, init_sl_c=1.05, be_trig_c=0.786, tp2_c=0.5, tp3_c=0.0)},
     {"slug": "x786", "label": "0.786 entry",
-     "params": dict(entry_c=0.786, init_sl_c=1.05, be_trig_c=0.618, tp2_c=0.382, tp3_c=0.0)},
+     "params": dict(entry_c=0.786, init_sl_c=1.05, be_trig_c=0.618, tp2_c=0.5, tp3_c=0.0)},
 ]
 _DEFAULT = REGIMES[0]["params"]
 ENTRY_C = _DEFAULT["entry_c"]

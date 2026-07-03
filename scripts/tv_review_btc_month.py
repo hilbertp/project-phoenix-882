@@ -56,7 +56,7 @@ from apps.api.db1_review_tradingview.service import (
     TradingViewSyncRequest,
     _build_expected_line_tool_points,
 )
-from scripts.execute_fib_strategy import build_subbar_index
+from scripts.execute_fib_strategy import REGIMES, build_subbar_index
 from scripts.place_fibs_tradingview import (
     PLACE_FIB_JS,
     REMOVE_VOLUME_JS,
@@ -316,7 +316,7 @@ def navigate_to_fib(driver, leg):
         return {"ok": False, "error": str(exc)}
 
 
-def load_prior_verdicts(setups: list, labels_path: Path) -> dict:
+def load_prior_verdicts(setups: list, labels_path: Path, config: dict) -> dict:
     """Reload verdicts already given for these setups so a relaunch resumes
     instead of starting blank.
 
@@ -325,6 +325,13 @@ def load_prior_verdicts(setups: list, labels_path: Path) -> dict:
     its most recent stored verdict, in the SAME display form the live loop
     uses (VERDICT_ACCEPT / 'setup_wrong' / 'outcome_wrong:TPx'). Only BTC 1h
     labels are considered, so ADA/other-asset labels can't bleed in.
+
+    `config` = {min_bars, mult, entry, exit_plan}: only verdicts recorded
+    under the SAME trade config count as prior review -- the same swing leg
+    scored under a different entry level or exit plan is a different claim,
+    and its verdict must not pre-fill this session. Labels written before
+    these fields existed default to the values they were reviewed under
+    (entry 941, exit plan runner).
 
     Returns {setup_index: display_verdict}.
     """
@@ -341,6 +348,12 @@ def load_prior_verdicts(setups: list, labels_path: Path) -> dict:
             continue
         dp = rec.get("detector_params", {}) or {}
         if dp.get("asset") != "BTC" or dp.get("interval") != "1h":
+            continue
+        if dp.get("min_bars") != config["min_bars"] or dp.get("mult") != config["mult"]:
+            continue
+        if str(dp.get("entry", "941")) != str(config["entry"]):
+            continue
+        if dp.get("exit_plan", "runner") != config["exit_plan"]:
             continue
         key = rec.get("setup_key") or f"{rec.get('parent_ts')}|{rec.get('term_ts')}"
         latest[key] = rec  # later lines overwrite -> latest wins
@@ -359,6 +372,31 @@ def load_prior_verdicts(setups: list, labels_path: Path) -> dict:
         else:
             out[idx] = rec.get("verdict", VERDICT_REJECT)
     return out
+
+
+def rewrite_btc_session_report(path: Path, *, month_label: str, window_tag: str,
+                               exit_plan: str) -> None:
+    """The shared markdown writer is ADA-specific; normalize BTC metadata."""
+    text = path.read_text(encoding="utf-8")
+    text = text.replace("# ADA 15m manual review session",
+                        "# BTC 1H manual review session", 1)
+    text = text.replace("- **Symbol:**  BINANCE:ADAUSDT @ 15m",
+                        "- **Symbol:**  BINANCE:BTCUSDT @ 1H", 1)
+    text = re.sub(
+        r"- \*\*Detector:\*\* .+",
+        f"- **Detector:** {MIN_BARS}c / {ATR_MULT:g}x ATR",
+        text,
+        count=1,
+    )
+    text = text.replace("- **Window:**  last 3 months",
+                        f"- **Window:**  {month_label} ({window_tag}, {exit_plan})", 1)
+    text = text.replace(
+        "- Each verdict tagged `asset=ADA`. Filter with `jq 'select(.asset==\"ADA\")'`.",
+        "- Each verdict tagged `detector_params.asset=BTC`. "
+        "Filter with `jq 'select(.detector_params.asset==\"BTC\")'`.",
+        1,
+    )
+    path.write_text(text, encoding="utf-8")
 
 
 def parse_month(s: str) -> tuple[str, str, str]:
@@ -385,8 +423,17 @@ def main():
                      help="trailing window in days (e.g. 92 for ~3 months)")
     ap.add_argument("--exit-plan", choices=["runner", "rest50"], default="runner",
                     help="runner = TP1 25%%/TP2 60%%/TP3 15%% at 0.0 (default); "
-                         "rest50 = TP1 25%% at 0.882 + SL->entry, remaining 75%% "
+                         "rest50 = TP1 25%% (SL->entry), remaining 75%% "
                          "all out at 0.5, no runner")
+    ap.add_argument("--entry", choices=["941", "882", "786"], default="941",
+                    help="entry fib level (regime from execute_fib_strategy."
+                         "REGIMES: TP1/SL-drag at the next-shallower level, "
+                         "TP2 0.5, TP3 0.0; SL 1.05 fixed)")
+    ap.add_argument("--fresh", action="store_true",
+                    help="start blank: ignore verdicts already recorded for "
+                         "this config (deliberate blind re-grade). NOTE: also "
+                         "disables crash-resume -- a mid-session relaunch "
+                         "starts over.")
     ap.add_argument("--min-bars", type=int, default=6,
                     help="detector minimum bars per leg (default 6)")
     ap.add_argument("--mult", type=float, default=2.0,
@@ -396,10 +443,11 @@ def main():
     MIN_BARS, ATR_MULT = args.min_bars, args.mult
     _rf.DETECTOR_PARAMS["min_bars"] = MIN_BARS
     _rf.DETECTOR_PARAMS["atr_mult"] = ATR_MULT
-    config_tag = f"{MIN_BARS}c/{ATR_MULT:g}x"
-    exec_kwargs = {}
+    config_tag = f"{MIN_BARS}c/{ATR_MULT:g}x e{args.entry}"
+    regime = next(r for r in REGIMES if r["slug"] == f"x{args.entry}")
+    exec_kwargs = dict(regime["params"])
     if args.exit_plan == "rest50":
-        exec_kwargs = {"p1": 0.25, "p2": 0.75, "p3": 0.0}
+        exec_kwargs.update({"p1": 0.25, "p2": 0.75, "p3": 0.0})
         config_tag += " rest50"
     if args.month:
         month_label, cutoff_start, cutoff_end = parse_month(args.month)
@@ -607,12 +655,22 @@ def main():
 
     # Reload verdicts already given for these setups (persisted in
     # human_labels.jsonl, latest-wins) so a relaunch after a bug fix doesn't
-    # make the user re-grade everything from scratch.
-    verdicts = load_prior_verdicts(setups, LABELS_PATH)
-    if verdicts:
-        print(f"==> resumed {len(verdicts)} prior verdicts from "
-              f"{LABELS_PATH.name}; {len(setups) - len(verdicts)} setups "
-              f"still unreviewed.", flush=True)
+    # make the user re-grade everything from scratch. Only verdicts for THIS
+    # config (min-bars/mult/entry/exit-plan) count; --fresh skips even those.
+    if args.fresh:
+        verdicts = {}
+        print(f"==> --fresh: starting blank; all {len(setups)} setups "
+              f"unreviewed this session.", flush=True)
+    else:
+        verdicts = load_prior_verdicts(setups, LABELS_PATH, {
+            "min_bars": MIN_BARS, "mult": ATR_MULT,
+            "entry": args.entry, "exit_plan": args.exit_plan,
+        })
+        if verdicts:
+            print(f"==> resumed {len(verdicts)} prior verdicts from "
+                  f"{LABELS_PATH.name} (same config only); "
+                  f"{len(setups) - len(verdicts)} setups "
+                  f"still unreviewed.", flush=True)
     started_at = datetime.now(timezone.utc)
 
     REMOVE_ALL_LINETOOLS_JS = r"""
@@ -785,7 +843,8 @@ def main():
             "window.__reviewStatus(arguments[0], arguments[1]);",
             f"BTC 1H {month_label} {config_tag}  {i + 1}/{len(setups)}",
             _ada_info_html(i, len(setups), leg, extra,
-                           verdict=verdicts.get(i)),
+                           verdict=verdicts.get(i),
+                           min_bars=MIN_BARS, min_atr=ATR_MULT),
         )
 
     # Resume at the first unreviewed setup (verdicts reloaded above).
@@ -886,6 +945,7 @@ def main():
                     "min_bars": MIN_BARS,
                     "mult": ATR_MULT,
                     "month": window_tag,
+                    "entry": args.entry,
                     "exit_plan": args.exit_plan,
                     "scored_outcome": leg.get("outcome_kind"),
                     "scored_R": leg.get("outcome_r"),
@@ -918,10 +978,16 @@ def main():
         ended_at = datetime.now(timezone.utc)
         OUT_DIR.mkdir(parents=True, exist_ok=True)
         ts = ended_at.strftime("%Y%m%dT%H%M%S")
-        report_path = OUT_DIR / f"SESSION_BTC_{window_tag}_{MIN_BARS}c{ATR_MULT:g}x_{args.exit_plan}_{ts}.md"
+        report_path = OUT_DIR / f"SESSION_BTC_{window_tag}_{MIN_BARS}c{ATR_MULT:g}x_e{args.entry}_{args.exit_plan}_{ts}.md"
         # Reuse the ADA markdown writer -- the schema is the same.
         from scripts.tv_review_ada_15m import write_session_report
         write_session_report(setups, verdicts, started_at, ended_at, report_path)
+        rewrite_btc_session_report(
+            report_path,
+            month_label=month_label,
+            window_tag=window_tag,
+            exit_plan=args.exit_plan,
+        )
         print(f"==> session report (markdown): {report_path}")
         print(f"==> labels appended to: {LABELS_PATH}")
         try:
