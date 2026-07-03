@@ -1,5 +1,11 @@
 # Project Phoenix
 
+**MAIN GOAL: develop a reliable fib-level entry detector whose variables can
+be changed quickly — timeframe (15m/1H/1D), minimum candles between pivots,
+entry level (0.786/0.882/0.941), and SL/TP strategy including a trailing
+stop — to find the most lucrative setup for trading.** Axis coverage and
+roadmap: [docs/MISSION.md](docs/MISSION.md).
+
 Project Phoenix is a research-and-engineering platform for **discovering and
 backtesting Fibonacci-retracement swing setups on crypto perpetuals**. Its first
 and current line of work is **Discovery Bet 1 (DB1)**: auto-detect swing legs on

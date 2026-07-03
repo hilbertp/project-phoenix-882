@@ -1,6 +1,10 @@
 # project-phoenix
 
 > ## ⚡ START HERE — BTC backtesting & TradingView review
+> **Main goal ([docs/MISSION.md](docs/MISSION.md)):** a reliable fib-entry
+> detector with quickly-swappable variables — timeframe, min pivot candles,
+> entry level (786/882/941), SL/TP strategy incl. trailing — to find the most
+> lucrative tradable setup.
 > **The complete, current operating manual is
 > [docs/TV_REVIEW_RUNBOOK.md](docs/TV_REVIEW_RUNBOOK.md).** Read it before
 > touching anything in this area. The three working commands:

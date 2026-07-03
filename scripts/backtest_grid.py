@@ -43,7 +43,7 @@ from apps.worker.discovery_bet_1.atr import calculate_atr14
 from apps.worker.discovery_bet_1.pivots import detect_local_pivots
 from apps.worker.discovery_bet_1.swing_detector import clean_legs
 from apps.worker.discovery_bet_1.types import Candle
-from scripts.execute_fib_strategy import build_subbar_index, execute
+from scripts.execute_fib_strategy import REGIMES, build_subbar_index, execute
 from scripts.ichimoku_regime import SETTLED, IchimokuRegime
 
 GRID = [(6, 2.0), (6, 3.0), (6, 4.0),
@@ -71,6 +71,9 @@ def main() -> None:
     win.add_argument("--month", help="YYYY-MM calendar month")
     win.add_argument("--last-days", type=int, help="trailing window in days")
     ap.add_argument("--exit-plan", choices=["runner", "rest50"], default="runner")
+    ap.add_argument("--entry", choices=["941", "882", "786"], default="941",
+                    help="fib entry level; BE-trigger and TPs follow the "
+                         "regime catalog in execute_fib_strategy.REGIMES")
     ap.add_argument("--veto", action="store_true",
                     help="also show each config with the Ichimoku regime veto")
     args = ap.parse_args()
@@ -93,11 +96,12 @@ def main() -> None:
         hi = last
         label = f"last {args.last_days}d"
 
-    exec_kwargs = {}
+    regime = next(r for r in REGIMES if r["slug"] == f"x{args.entry}")
+    exec_kwargs = dict(regime["params"])   # entry_c / init_sl_c / be_trig_c / tp2_c / tp3_c
     if args.exit_plan == "rest50":
-        exec_kwargs = {"p1": 0.25, "p2": 0.75, "p3": 0.0}
+        exec_kwargs.update({"p1": 0.25, "p2": 0.75, "p3": 0.0})
 
-    print(f"BTC 1H · 0.941 entry · exit={args.exit_plan} · {label} "
+    print(f"BTC 1H · 0.{args.entry} entry · exit={args.exit_plan} · {label} "
           f"({lo[:10]} .. {hi[:10]}) · data through {c1h[-1].source_timestamp}")
     print(f"{'config':<11}{'trig':>5}{'TP3':>5}{'TP2':>5}{'TP1':>5}{'LOSS':>6}"
           f"{'sumR':>9}{'avgR':>9}{'win%':>7}")
