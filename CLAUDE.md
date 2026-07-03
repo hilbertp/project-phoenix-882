@@ -1,10 +1,23 @@
 # project-phoenix
 
-> **To RUN a manual TradingView review (the live W/S/A/D tool):**
-> see **[docs/TV_REVIEW_RUNBOOK.md](docs/TV_REVIEW_RUNBOOK.md)**.
-> One command: `cd ~/project-phoenix-882 && ./scripts/tv-btc.sh 2026-05`.
-> (The TamperMonkey overlay described below is an unbuilt design spec, NOT the
-> tool that runs today.)
+> ## ⚡ START HERE — BTC backtesting & TradingView review
+> **The complete, current operating manual is
+> [docs/TV_REVIEW_RUNBOOK.md](docs/TV_REVIEW_RUNBOOK.md).** Read it before
+> touching anything in this area. The three working commands:
+>
+> ```bash
+> ./scripts/tv-btc.sh last92d --exit-plan rest50    # supervised manual review on TV (self-healing)
+> PYTHONPATH=. .venv/bin/python scripts/backtest_grid.py --last-days 92 --veto   # results table
+> PYTHONPATH=. .venv/bin/python scripts/render_btc_month_review.py --month 2026-05 --min-bars 6 --mult 4.0  # PNG cards
+> ```
+>
+> New machine: `./scripts/bootstrap.sh` then TV login once. NEVER attach a
+> second selenium session to the running debug Chrome (kills the live review);
+> full-screen overlay / yellow panel text = wait, it self-heals. The full
+> never-do list and troubleshooting live in the runbook.
+>
+> (The TamperMonkey overlay described in the rest of THIS file is an unbuilt
+> design spec — NOT the tool that runs today.)
 
 ## What this is
 

@@ -1,128 +1,138 @@
-# TradingView Manual Review — Runbook
+# DB1 BTC Backtesting & TradingView Review — Operating Manual
 
-**This is the live, working tool for reviewing DB1 swing/Fib setups on a real
-TradingView chart with W/S/A/D keys.** (Not the TamperMonkey overlay in
-`CLAUDE.md` — that is an unbuilt design spec. This selenium-driven tool is what
-actually runs today.)
+**Audience: any agent or human with fresh context.** Everything here is
+current as of 2026-07-03 and verified working. If you follow only one rule:
+run the commands below from `~/project-phoenix-882` and trust the supervisor —
+it self-heals. A full-screen overlay or yellow panel text means WAIT; only a
+missing overlay + missing panel for >2 minutes means something is wrong.
 
 ---
 
-## THE COMMAND
+## The three commands
+
+All from `cd ~/project-phoenix-882`. Working clone is **`project-phoenix-882`**
+(`~/project-phoenix` is a dead husk with no `.git` — never use it).
+
+### 1. Manual review on TradingView (the WSAD panel)
 
 ```bash
-cd ~/project-phoenix-882 && ./scripts/tv-btc.sh 2026-05
+./scripts/tv-btc.sh last92d --exit-plan rest50          # trailing 92 days
+./scripts/tv-btc.sh 2026-05                             # calendar month
+./scripts/tv-btc.sh 2026-04 --min-bars 24 --mult 4.0    # custom detector gates
 ```
 
-That is the whole thing. `2026-05` = the calendar month to review (any `YYYY-MM`).
+This is a SUPERVISOR: it health-checks Chrome with a real attach probe,
+remediates automatically (stale locks → poisoned cache → full relaunch, 3
+attempts), restarts + RESUMES if the browser dies mid-session, and the review
+itself self-heals TradingView wedges (lazy fib-module via the Alt+F pre-warm,
+history eviction via re-paging, broken pages via reload + re-init, the
+ad-blocker nag modal via a 2s watchdog). Verdicts persist in
+`data/discovery_bet_1/human_labels.jsonl` (in git — commit + push after a
+session); a relaunch resumes at the first unreviewed setup.
 
-- **Do NOT prefix with `git pull`.** This repo IS the source of truth; pulling
-  only fails on the modified `human_labels.jsonl` (your saved verdicts). Pull
-  only if you are syncing a *different* clone.
-- **Working dir is `~/project-phoenix-882`.** `~/project-phoenix` is a dead husk
-  with no `.git` — do not use it.
+Panel keys: **W**=setup+outcome correct · **S→R**=not a real swing ·
+**S→F→1/2/3/L/M**=real setup, corrected outcome · **A/D**=prev/next ·
+**Enter**=finish (writes a markdown report + on-chart overlay).
+
+### 2. Backtest grid (the standard results table, no browser)
+
+```bash
+PYTHONPATH=. .venv/bin/python scripts/backtest_grid.py --month 2026-05
+PYTHONPATH=. .venv/bin/python scripts/backtest_grid.py --last-days 92 --exit-plan rest50 --veto
+```
+
+Every (min-bars × ATR-mult) detector combo; `--veto` adds the Ichimoku
+regime-filtered line per config. Runs in ~1-2 min, fully offline for past
+windows.
+
+### 3. Rendered review cards (PNGs with 5m zooms, no browser)
+
+```bash
+PYTHONPATH=. .venv/bin/python scripts/render_btc_month_review.py --month 2026-05 --min-bars 6 --mult 4.0
+open artifacts/discovery_bet_1/manual_review_btc_1h_month/cards_2026-05_6c4x/index.html
+```
+
+One PNG per setup: 1H context, all fib levels, numbered executor events, the
+active-stop drag line, one 5m zoom per decisive hour, regime VETO/trade badge,
+and DISPUTE tags where the engine disagrees with the latest human label.
 
 ---
 
-## New machine / collaborator quickstart (macOS or WSL2 Ubuntu)
+## New machine (macOS or WSL2 Ubuntu) — one-time, ~10 min
 
 ```bash
 git clone https://github.com/hilbertp/project-phoenix-882.git ~/project-phoenix-882
 cd ~/project-phoenix-882
-./scripts/bootstrap.sh        # venv + deps + Chrome check + ALL market data (one-time, ~10 min)
-PYTHONPATH=. .venv/bin/python scripts/place_fibs_tradingview.py login   # log into TV once (Email option)
-./scripts/tv-btc.sh 2026-05 --min-bars 6 --mult 4.0                     # review May at 6c/4x
+./scripts/bootstrap.sh     # venv + deps + Chrome check + 1H & 5m market data
+PYTHONPATH=. .venv/bin/python scripts/place_fibs_tradingview.py login   # TV login ONCE (Email option)
 ```
 
-Existing clone instead: `git pull --rebase --autostash origin main` then the
-same bootstrap (it only does what's missing). On WSL2, Chrome must be
-installed INSIDE the distro (`sudo apt install ./google-chrome-stable_current_amd64.deb`);
-WSLg puts its window on the Windows desktop. Each machine keeps its own
-TradingView login in `~/.phoenix-chrome-tv` — log in once, it persists.
-Verdicts append to `data/discovery_bet_1/human_labels.jsonl` (in git), so
-commit + push after a review session to share your grades.
+Existing clone: `git pull --rebase --autostash origin main`, then bootstrap
+(idempotent — only does what's missing). WSL2: Chrome must be installed INSIDE
+the distro; WSLg shows the window on the Windows desktop. Each machine keeps
+its own TradingView login in `~/.phoenix-chrome-tv` (persists across clones).
 
 ---
 
-## Does it re-scrape / re-compute? (the FAQ)
+## The strategy & engine (what the numbers mean)
 
-| Step | Past month (e.g. 2026-05) | Current month (e.g. 2026-06) |
-|---|---|---|
-| **Scrape Binance** | **Skipped** — CSV already covers it, runs fully offline | Runs (needs latest bars) |
-| **Detector compute** | Re-runs every time (~1s, deterministic) | same |
-| **Setups** | Computed in memory, identical every run — **not** stored in a DB | same |
+- **Setup**: ATR-zigzag swing legs on BINANCE:BTCUSDT 1H (CSV = Binance spot).
+  Detector gates are MINIMUMS: `--min-bars 6 --mult 2.0` = every leg with ≥6
+  candles and ≥2× ATR depth (raising `mult` changes the zigzag walk, not just
+  a filter).
+- **Trade**: enter 0.941 retrace · SL 1.05 (FIXED — never widen) ·
+  exit plans: `runner` = TP1 25% at 0.882 (SL→entry) / TP2 60% at 0.5 / TP3
+  15% at 0.0; `rest50` = TP1 25% at 0.882 (SL→entry) / remaining 75% at 0.5.
+- **Outcome engine** (`scripts/execute_fib_strategy.py::execute`) is
+  HUMAN-VALIDATED (26/27 against the user's graded May-2026 review) and locked
+  by `tests/test_execute_outcome_ground_truth.py` — run it after ANY executor
+  change. Rules: stop live from the fill bar; fill bar can kill but never
+  credit; same-bar ambiguity resolves unfavorably; touch-based BE stop;
+  micro-graze rule; 5m sub-bars resolve intra-candle order (5m > 15m > 1H).
+- **Regime detector** (`scripts/ichimoku_regime.py`): the 26-bar two-sides
+  rule — if price closed above AND below the Ichimoku cloud within the last
+  26 bars, the market is repricing → no trades. Measured effect over 12
+  months: −35.8R unfiltered → +3.2R with veto (6c/4x).
 
-So a past-month replay is **fast and reproducible**: no network, and the same
-27 setups every time (immutable history + deterministic 6c/2.0× detector).
-The slow part is TradingView loading the chart + paging history (~30–60s),
-not data or compute.
-
-CSV: `data/discovery_bet_1/binance_btcusdt_1h_full_history.csv` (Binance spot).
+Research state in one line: no detector-parameter pair wins across months;
+the regime veto improved every single month tested; exit-plan choice is
+second-order. Labels: `accept`=engine correct, `wrong_kind=setup`=not a real
+swing, `wrong_kind=outcome`+expected=corrected class. Win rate =
+(TP1+TP2+TP3)/triggered.
 
 ---
 
-## What you see / do
+## Hard constraints (violating these cost hours — do not relearn)
 
-Chart loads on **`BINANCE:BTCUSDT` @ 1H**, setup 1 of N auto-zoomed with its fib
-(1.05 stop / 1.0 parent / 0.941 entry / 0.882 BE / 0.5 / 0 terminal).
+1. **NEVER attach a second selenium session to the running debug Chrome** —
+   its teardown kills the shared browser and the live review. Diagnose from
+   `/tmp/tv-btc.log` (every show() logs nav method + placement result) and
+   OS-level screenshots only.
+2. **Chrome debug requires the dedicated profile** `~/.phoenix-chrome-tv` —
+   Chrome 136+ silently refuses `--remote-debugging-port` on the OS-default
+   profile. Never point the tooling at the user's real profile.
+3. **Chart symbol must stay BINANCE:BTCUSDT** (spot, matches the CSV). The
+   launch enforces this; a watchlist click can still switch it — recovery is
+   click BTCUSDT, then press A.
+4. **Only one review process at a time** (the wrapper enforces this; two
+   fight over the panel).
+5. **curl on :9222 is not a health check** — zombie Chrome answers HTTP but
+   refuses sessions. Only a real attach probe counts (the wrapper does this).
+6. **`data/` is gitignored except `human_labels.jsonl`** — market data comes
+   from bootstrap/acquire, never from git; the acquirer refuses to truncate.
 
-| Key | Action |
+## Troubleshooting (rarely needed now)
+
+| Symptom | Action |
 |---|---|
-| **D** / → | next setup (auto-zooms) |
-| **A** / ← | previous setup |
-| **W** | accept (anchors + outcome correct) |
-| **S** then **R** | setup wrong (bad anchors) |
-| **S** then **F** then **1/2/3/L/M** | outcome wrong → TP1/TP2/TP3/Loss/Miss |
-| **Enter** | end session → writes report + renders overlay on chart |
+| Full-screen overlay or yellow "loading" text | WAIT — self-heal in progress (30-90s) |
+| No overlay, no panel, >2 min | check `/tmp/tv-btc.log`; worst case `rm -rf ~/.phoenix-chrome-tv/Default/Cache` and rerun |
+| "0 clean legs" / "no triggered setups" | CSV truncated or window wrong — rerun `scripts/acquire_long_asset.py BTCUSDT 1h` |
+| TV asks for login | log in once in the opened window (Email option); it persists |
+| Engine outcome disputed by eye | that's data: grade it S→F in the review; the ground-truth test absorbs it |
 
-Click the **panel** (top-left box) once so it has keyboard focus — not the chart.
-
-Verdicts append to `data/discovery_bet_1/human_labels.jsonl`
-(tagged `asset=BTC, month=YYYY-MM`). Session report (markdown) lands in
-`artifacts/discovery_bet_1/manual_review_btc_1h_month/`.
-
-Detector: **6 bars min, 2.0× ATR min**. Miss-filter ON (only setups where the
-0.941 entry was tagged). `PHOENIX_REVIEW_INCLUDE_MISSES=1` to keep misses.
-
----
-
-## Hard constraints (why it broke before — do not relearn)
-
-1. **Chrome debug profile, NOT your real profile.** Chrome 136+ silently ignores
-   `--remote-debugging-port` on the OS-default profile (anti-automation
-   hardening; confirmed on Chrome 148). The tool uses a dedicated profile at
-   **`~/.phoenix-chrome-tv`** (outside the repo, so the TradingView login
-   persists across clones — you log in there **once**). Override with
-   `PHOENIX_CHROME_PROFILE=/abs/path`.
-
-2. **Chart must stay `BINANCE:BTCUSDT`.** The CSV is Binance-spot OHLC. If the
-   chart drifts to GOLD / `BITGET:BTCUSDT.P`, anchors land on wrong prices and
-   the zoom dies. The launch swallows stray printable keys so TV's
-   type-a-letter symbol-search popup can't open. The watchlist stays VISIBLE
-   and usable — but clicking a symbol in it still switches the chart, so if you
-   do, click `BTCUSDT` back and press A then D.
-
-3. **Never attach a throwaway selenium session to the running debug Chrome.**
-   When that script exits, its garbage-collected driver sends `quit`, which
-   CLOSES the shared browser and kills the live review. Diagnose from the
-   review's stdout (every `show()` logs `nav=<method>`), and use OS-level
-   screenshots — never a second selenium connection.
-
-4. **One reviewer at a time.** Two `tv_review_btc_month.py` processes on one
-   Chrome fight over the panel (index jumps, drawings flicker). The wrapper
-   `pkill`s any stale reviewer before launching.
-
----
-
-## Troubleshooting
-
-| Symptom | Cause / fix |
-|---|---|
-| `cannot pull with rebase: unstaged changes` | You don't need to pull. Just run `./scripts/tv-btc.sh 2026-05`. |
-| `0 clean legs` / `no triggered setups` | CSV got truncated by a failed fetch. Restore: `PYTHONPATH=. .venv/bin/python scripts/acquire_long_asset.py BTCUSDT 1h` and confirm the last bar reaches ~today. (acquire now retries + refuses to clobber a longer file.) |
-| Panel/fibs never appear | Debug Chrome didn't bind `:9222` — almost always the wrong profile. Confirm `~/.phoenix-chrome-tv` exists and you're logged into TV there. |
-| Chart on GOLD/Bitget | You switched symbols. Click `BTCUSDT`, press A then D. |
-| Next/Back don't zoom | You're not on `BINANCE:BTCUSDT` (bars not found). Switch back. |
-
-Implementation: `scripts/tv-btc.sh` (wrapper) → `scripts/tv_review_btc_month.py`
-(driver) → shared JS in `scripts/review_fibs_tradingview.py`,
-`scripts/place_fibs_tradingview.py`.
+Implementation map: `scripts/tv-btc.sh` (supervisor) →
+`scripts/tv_review_btc_month.py` (review driver) → shared JS in
+`scripts/place_fibs_tradingview.py` + `scripts/review_fibs_tradingview.py`;
+engine `scripts/execute_fib_strategy.py`; regime `scripts/ichimoku_regime.py`;
+grid `scripts/backtest_grid.py`; cards `scripts/render_btc_month_review.py`.
