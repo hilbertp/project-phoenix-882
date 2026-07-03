@@ -58,6 +58,9 @@ def main() -> None:
     ap.add_argument("--universe", choices=["legs", "scan"], default="legs",
                     help="legs = classic zigzag legs; scan = from-scratch "
                          "running-extreme candidates (scan_entry_universe)")
+    ap.add_argument("--exclude-stale-fills", action="store_true",
+                    help="drop fills with a zigzag pivot between the terminal "
+                         "anchor and the entry (run_id gets _nostale suffix)")
     args = ap.parse_args()
 
     c1h = load_csv(REPO_ROOT / "data/discovery_bet_1/binance_btcusdt_1h_full_history.csv")
@@ -85,14 +88,16 @@ def main() -> None:
     now = datetime.now(timezone.utc).isoformat()
     run_id = (f"{window}_{args.min_bars}c{args.mult:g}x_e{args.entry}"
               f"_{args.exit_plan}")
+    zz_piv = refined_pivots(c1h, atr, args.mult)
     if args.universe == "scan":
         run_id += "_scan"
-        pool = candidates_from_pivots(
-            c1h, atr, refined_pivots(c1h, atr, args.mult),
-            args.min_bars, args.mult)
+        pool = candidates_from_pivots(c1h, atr, zz_piv,
+                                      args.min_bars, args.mult)
     else:
         pool = clean_legs(c1h, atr, piv,
                           min_bars=args.min_bars, mult=args.mult)
+    if args.exclude_stale_fills:
+        run_id += "_nostale"
     legs = [l for l in pool
             if l["term_ts"] in idx and lo <= l["parent_ts"] <= hi]
     n = 0
@@ -101,6 +106,11 @@ def main() -> None:
             res = execute(c1h, idx, leg, subbars=sub5, **exec_kwargs)
             if res["status"] in ("no_entry", "no_trigger", "degenerate"):
                 continue
+            if args.exclude_stale_fills:
+                fill_i = idx.get(res["events"][0][1][:13] + ":00:00")
+                ti = idx[leg["term_ts"]]
+                if fill_i is not None and any(ti < p[0] < fill_i for p in zz_piv):
+                    continue
             n += 1
             fh.write(json.dumps({
                 "run_id": run_id,

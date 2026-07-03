@@ -442,6 +442,11 @@ def main():
                     help="comma-separated setup_keys (parent_ts|term_ts) to "
                          "review, in the given order; skips the miss filter "
                          "(for targeted re-review / anchor comparison)")
+    ap.add_argument("--exclude-stale-fills", action="store_true",
+                    help="drop setups whose entry filled only after another "
+                         "zigzag pivot formed past the terminal anchor (PO "
+                         "ruling 2026-07-03: an extreme between the anchors "
+                         "and the entry invalidates the entry)")
     ap.add_argument("--min-bars", type=int, default=6,
                     help="detector minimum bars per leg (default 6)")
     ap.add_argument("--mult", type=float, default=2.0,
@@ -515,6 +520,19 @@ def main():
     for leg in legs:
         _annotate_span_depth(leg, idx_map, atr)
         _annotate_outcome(leg, candles, idx_map, subbars=subbars, exec_kwargs=exec_kwargs)
+
+    if args.exclude_stale_fills:
+        from scripts.scan_entry_universe import refined_pivots as _rp
+        _piv = _rp(candles, atr, ATR_MULT)
+        def _stale(l):
+            fi = idx_map.get((l.get("fill_ts") or "")[:13] + ":00:00")
+            ti = idx_map.get(l["term_ts"])
+            return fi is not None and ti is not None \
+                and any(ti < p[0] < fi for p in _piv)
+        n0 = len(legs)
+        legs = [l for l in legs if not _stale(l)]
+        print(f"==> excluded {n0 - len(legs)} stale-fill setups "
+              f"(zigzag pivot between terminal anchor and entry fill).")
 
     if args.only_keys:
         want = [k.strip() for k in args.only_keys.split(",") if k.strip()]

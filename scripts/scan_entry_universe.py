@@ -231,11 +231,16 @@ def main() -> None:
             res = execute(candles, idx, c, subbars=sub5, **kwargs)
             if res["status"] in MISS_STATUSES:
                 continue
+            fill_i = idx.get(res["events"][0][1][:13] + ":00:00")
+            between = [p for p in piv
+                       if fill_i is not None and c["term_idx"] < p[0] < fill_i]
             trig.append({**c, "status": res["status"],
                          "class": CLS.get(res["status"], res["status"]),
                          "r": round(res["r"], 4),
                          "fill_ts": res["events"][0][1],
                          "veto": veto_class(res) == "transition",
+                         "stale_fill": bool(between),
+                         "pivots_between": len(between),
                          "events": [(e[0], e[1], round(e[2], 2))
                                     for e in res["events"]]})
         # legs-only triggered set for the delta line

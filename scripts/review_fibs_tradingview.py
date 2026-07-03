@@ -410,6 +410,8 @@ def _annotate_outcome(leg, candles, idx_map, subbars=None, exec_kwargs=None):
     leg["outcome"] = label
     leg["outcome_kind"] = kind
     leg["outcome_r"] = res["r"]
+    if res.get("events"):
+        leg["fill_ts"] = res["events"][0][1]
     return leg
 
 
