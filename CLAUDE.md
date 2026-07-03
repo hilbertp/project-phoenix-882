@@ -6,7 +6,9 @@
 > entry level (786/882/941), SL/TP strategy incl. trailing — to find the most
 > lucrative tradable setup.
 > **The complete, current operating manual is
-> [docs/TV_REVIEW_RUNBOOK.md](docs/TV_REVIEW_RUNBOOK.md).** Read it before
+> [docs/TV_REVIEW_RUNBOOK.md](docs/TV_REVIEW_RUNBOOK.md)**, and the engine's
+> human-learned rule set (with provenance + reproduction protocol) is
+> **[docs/ENGINE_RULES.md](docs/ENGINE_RULES.md)**. Read it before
 > touching anything in this area. The three working commands:
 >
 > ```bash

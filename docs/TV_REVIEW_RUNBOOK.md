@@ -1,6 +1,7 @@
 # DB1 BTC Backtesting & TradingView Review — Operating Manual
 
 Project main goal and axis-coverage roadmap: [MISSION.md](MISSION.md).
+The engine's learned rule set + reproduction protocol: [ENGINE_RULES.md](ENGINE_RULES.md).
 
 **Audience: any agent or human with fresh context.** Everything here is
 current as of 2026-07-03 and verified working. If you follow only one rule:
