@@ -27,7 +27,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 from apps.worker.discovery_bet_1.types import Candle
-from scripts.execute_fib_strategy import build_subbar_index, execute
+from scripts.execute_fib_strategy import REGIMES, build_subbar_index, execute
 
 LABELS = REPO_ROOT / "data/discovery_bet_1/human_labels.jsonl"
 CSV = REPO_ROOT / "data/discovery_bet_1/binance_btcusdt_1h_full_history.csv"
@@ -66,7 +66,11 @@ def _load_labeled_setups():
         if dp.get("month") != "2026-05":
             continue
         key = rec.get("setup_key") or f"{rec.get('parent_ts')}|{rec.get('term_ts')}"
-        latest[key] = rec
+        # One grade per (setup, trade config): the same swing scored under a
+        # different entry level or exit plan is a different claim -- e882
+        # grades must not overwrite the 941-era ground truth.
+        cfg = f"e{dp.get('entry', '941')}|{dp.get('exit_plan', 'runner')}"
+        latest[f"{key}|{cfg}"] = rec
     out = []
     for rec in latest.values():
         dp = rec.get("detector_params") or {}
@@ -93,6 +97,11 @@ CONTESTED = {
     "2026-05-13T18:00:00",   # setup  9: clean separate-bar TP1 tag at 5m -> scratch vs LOSS
     "2026-05-17T01:00:00",   # setup 12: separate-bar TP1+BE at 5m -> scratch (label agrees)
     "2026-05-17T14:00:00",   # setup 13: graze -> unmanaged -> SL; engine LOSS vs stale TP1
+    "2026-05-06T11:00:00",   # e882 TP3 vs human TP2 (graded 3x): 5m tape shows a clean
+                             # trade-through of 0.0 on 05-13 15:45-16:05, but the PO's
+                             # stale-fill ruling removes this entry from the universe
+                             # entirely (fill 05-10 23:10 came after two intervening
+                             # pivots) -- moot once --exclude-stale-fills is default.
 }
 
 
@@ -141,7 +150,15 @@ class OutcomeGroundTruthTests(unittest.TestCase):
             if rec["term_ts"] not in self.idx:
                 failures.append(f"{rec['parent_ts']}: term bar missing from CSV")
                 continue
-            res = execute(self.candles, self.idx, swing, subbars=self.subbars)
+            # Replay under the regime the label was graded against.
+            dp = rec.get("detector_params") or {}
+            regime = next(r for r in REGIMES
+                          if r["slug"] == f"x{dp.get('entry', '941')}")
+            kwargs = dict(regime["params"])
+            if dp.get("exit_plan") == "rest50":
+                kwargs.update({"p1": 0.25, "p2": 0.75, "p3": 0.0})
+            res = execute(self.candles, self.idx, swing, subbars=self.subbars,
+                          **kwargs)
             ok_statuses = STATUS_FOR.get(expected, set())
             if res["status"] not in ok_statuses:
                 line = (f"{rec['parent_ts']} {rec['direction']}: "
