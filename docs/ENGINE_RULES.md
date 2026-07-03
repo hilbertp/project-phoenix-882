@@ -1,91 +1,116 @@
 # The Learned Rule Set — DB1 Outcome Engine
 
-**Purpose: this document IS the transferable knowledge.** Every rule below was
-learned from the user's manual chart reviews (May 2026 audits, 15m/5m
-re-checks) and then encoded as deterministic Python. A fresh agent must be
-able to (a) understand the engine's behavior from this page alone and
-(b) reproduce any frozen run bit-for-bit via the protocol at the bottom.
-No rule may be changed without `tests/test_execute_outcome_ground_truth.py`
-staying green — that fixture replays every human verdict ever given.
+**This document is the transferable knowledge.** Every rule was learned from
+the user's manual chart reviews and then turned into fixed code. It is
+written so a TRADER can read it — plain sentence first, technical detail in
+*(italics)* after. A fresh agent must be able to understand the engine from
+this page and reproduce any recorded run exactly (protocol at the bottom).
 
-Provenance format: each rule cites WHY (the human correction that created it)
-and WHERE (code anchor).
+No rule may change unless `tests/test_execute_outcome_ground_truth.py` stays
+green — that test replays every verdict the user ever gave.
+
+## Small glossary
+
+- **candle / bar** — one time slice of price (a 1-hour candle, a 5-minute candle).
+- **touch** — price reached a level at any moment, even briefly (a wick counts).
+- **fill** — the moment your entry order executes; **the fill bar** is the
+  candle during which that happened.
+- **BE (break-even)** — moving your stop to your own entry price, so the rest
+  of the trade can no longer lose.
+- **R** — profit/loss measured in units of your initial risk. Losing the full
+  stop distance = −1R.
 
 ---
 
-## A. Setup detection — which legs exist
+## A. Which swings count as setups
 
-- **A1. ATR-zigzag walk.** A leg reverses only when price retraces ≥
-  ATR(14) × `mult` from the running extreme. `mult` is a MINIMUM depth gate —
-  a 2.0× run contains every deeper leg; raising it changes the walk itself,
-  not just a filter. *(swing_detector.py::clean_legs)*
-- **A2. Min-bars gate.** Legs spanning fewer than `min_bars` candles between
-  the two pivots are dropped.
-- **A3. Pivot refinement (swing-correction).** After the walk, each pivot
-  snaps to the true extreme bar within its neighbor window; among TIED
-  extremes the LATEST bar wins. *(Why: the raw walk anchored "a few candles
-  left of the visual extreme" — user complaint, May 2026.)*
+- **A1.** A swing leg only counts when the market really reversed: price must
+  retrace at least *N × the average candle size* (ATR) from the extreme.
+  That N (`--mult`) is a MINIMUM — a "2×" run includes every deeper swing too.
+  *(swing_detector.py::clean_legs — raising mult changes the whole zigzag
+  walk, not just a filter.)*
+- **A2.** Swings with fewer than `--min-bars` candles between their high and
+  low are ignored (too small/fast).
+- **A3.** The anchor points snap to the actual highest/lowest candle of the
+  swing — and if several candles share that extreme, the latest one is used.
+  *(Added because the drawn anchors sat "a few candles left of the visual
+  extreme" — user complaint, May 2026.)*
 
-## B. Trade geometry — the 0.941 regime (REGIMES catalog)
+## B. The trade itself (0.941 entry plan)
 
-- **B1. Levels.** `level(c) = terminal + (parent − terminal) × c`. Entry
-  0.941 · initial SL 1.05 (**FIXED — never widen**, user law) · TP1/BE-trigger
-  0.882 · TP2 0.5 · TP3 0.0. Entries 0.882/0.786 shift the ladder per the
-  catalog. *(execute_fib_strategy.py::REGIMES)*
-- **B2. Trigger validity.** Walking 1H bars after the terminal: a new extreme
-  beyond the terminal before the entry touches → `no_trigger`; entry never
-  touched → `no_entry`. Both are MISSES — excluded from review and stats
-  ("only when 941 hit", user rule).
-- **B3. Exit plan `runner`.** TP1 25% · TP2 60% · TP3 15%. (`rest50`: TP1 25%
-  then remaining 75% out at 0.5.)
+- **B1.** All levels are drawn on the swing: enter at the 0.941 retrace,
+  stop-loss at 1.05 (**fixed, never widened — user law**), first target 0.882,
+  second target 0.5, final target 0.0. Other entries (0.882 / 0.786) shift
+  the whole ladder accordingly. *(execute_fib_strategy.py::REGIMES)*
+- **B2.** If price makes a new extreme beyond the swing before reaching the
+  entry, the setup is dead. If the entry price is simply never reached, the
+  setup is a MISS — misses are excluded from all statistics ("only when 941
+  hit" — user rule).
+- **B3.** Profit-taking plan "runner": 25% off at the first target, 60% at
+  the second, 15% rides to the final target. (Alternative "rest50": 25% at
+  the first target, then everything out at 0.5.)
 
-## C. Outcome scoring — the human-validated core
+## C. How the outcome is decided — the eight human-taught rules
 
-- **C1. Sub-bar resolution is canonical: 5m > 15m > native ties.** Intra-candle
-  event ORDER is read from the finest data available, never guessed when data
-  exists. *(Why: setup 13 — the 15m tape mis-ordered SL-before-TP1; 5m showed
-  TP1 first; the user's eyeball beat both coarser views.)*
-- **C2. The stop is LIVE from the fill: the fill bar can KILL.** An SL touch
-  on the bar that fills the entry is a real stop-out (for a long, price below
-  entry exists only post-fill — geometrically provable). *(Why: 8 of the 10
-  false wins in the first May audit were entry-bar stop-outs the old engine
-  exempted.)*
-- **C3. The fill bar can never CREDIT.** TP touches on the fill bar don't
-  count — the bar's high/low may predate the fill within the bar. *(Why: the
-  user explicitly refused entry-bar TP1 credit on setups 05-12/05-20.)*
-- **C4. Micro-graze rule.** A single bar spanning the WHOLE entry↔TP1 band
-  (touches both) is noise: no partial, break-even NOT armed, position stays
-  in phase 1 under the 1.05 hard stop. *(Why: every same-bar graze the user
-  graded was LOSS/TP2 — unmanaged; every separate-bar tag-then-return was
-  TP1.)*
-- **C5. Separate-bar TP1 touch arms management.** 25% banked at 0.882, stop
-  dragged to entry.
-- **C6. Break-even stop is TOUCH-based.** ANY wick back to entry scratches the
-  remainder — no close required. *(Why: user's answer "Touch — any wick
-  through entry"; their TP2→TP1 corrections demanded it.)*
-- **C7. Same-bar ambiguity resolves UNFAVORABLY** at whatever granularity is
-  still ambiguous: SL beats TP1; BE-touch beats TP2/TP3. *(Why: user chose
-  "SL wins — conservative" for spanning bars.)*
-- **C8. Event timestamps are fill-bar precise** (5m when sub-bars exist) so
-  renderers place markers on the correct candle.
+- **C1. Read the fine print of each hour.** Whether the stop or the target was
+  hit FIRST inside a candle is decided by looking at the 5-minute candles
+  inside it — never guessed when finer data exists. *(Why: on one setup even
+  the 15-minute view gave the wrong order; only 5m agreed with the user's
+  reading. 5m > 15m > coarser.)*
+- **C2. The candle that fills your entry can stop you out.** If the same
+  candle that triggers your entry also reaches the stop price, that is a real
+  −1R loss. This is certain, not guessed: price beyond your entry can only
+  have traded AFTER you were in (before the fill, the market hadn't fallen
+  that far yet). *(Why: the old engine skipped the entry candle entirely, so
+  same-candle stop-outs were silently counted as surviving trades — the
+  single biggest source of fake wins in the May audit.)*
+- **C3. But the fill candle can never give you profit.** A touch of the
+  target inside the fill candle doesn't count — that touch may have happened
+  BEFORE your entry executed, and we can't know. Profit needs a later candle.
+  *(Why: the user rejected entry-candle target credits on review.)*
+- **C4. One candle poking both entry and first target = nothing happened.**
+  When a single 5-minute candle touches the first target AND dips back to the
+  entry price, that's noise, not a real move: no profit is taken, the stop
+  stays at 1.05, the trade continues as if untouched. *(Why: every such
+  "graze" the user graded had behaved as if the target was never really
+  reached.)*
+- **C5. A clean touch of the first target arms the protection.** When a
+  candle reaches the first target WITHOUT dipping back to entry, 25% profit
+  is banked and the stop moves up to the entry price.
+- **C6. After that, one wick back to your entry ends the trade.** The moved
+  stop is touch-based: any brief dip back to the entry price closes the rest
+  at break-even — no candle close needed. *(User's explicit choice: "Touch —
+  any wick through entry.")*
+- **C7. When one candle is ambiguous, assume the worse outcome.** If a candle
+  touches both the stop and a target and even the 5-minute data can't order
+  them: the stop wins. *(User's explicit choice: "SL wins — conservative.")*
+- **C8. Every event is stamped with its exact 5-minute candle**, so chart
+  markers sit on the right candle.
 
-Outcome classes: `tp1_then_scratch`→TP1 (≈+0.14R) · `tp2_then_scratch`→TP2 ·
-`tp3_full`→TP3 · `wipeout`→LOSS (−1R) · misses excluded. Win rate =
-(TP1+TP2+TP3)/triggered.
+Outcome names: **TP1** = banked 25% then break-even (≈ +0.14R) · **TP2** =
+also banked the 0.5 target · **TP3** = full winner · **LOSS** = −1R ·
+misses excluded. Win rate = (TP1+TP2+TP3) / triggered trades.
 
-## D. Determinism & data
+## D. Why results are trustworthy and repeatable
 
-- **D1.** Binance SPOT BTCUSDT CSVs (1H + 5m); past windows immutable; the
-  acquirer retries and refuses to truncate.
-- **D2.** No randomness, no model, no label access at runtime (audited
-  2026-07-03: the scoring path never reads `human_labels.jsonl`). Same inputs
-  → identical outputs, any machine, any agent.
+- **D1.** Price data comes from Binance's official records, saved as files.
+  Old candles never change, so past months give the same result forever.
+- **D2.** The engine is a fixed calculation, not an AI. Same data in → same
+  result out, on any computer, run by anyone.
+- **D3.** It cannot peek at your grades: every line of the scoring code was
+  audited (2026-07-03) — it never opens the file your verdicts live in
+  (`human_labels.jsonl`). Your feedback improves the RULES (this document);
+  it is never available as answers at runtime.
+- **D4.** Warning for future developers: `CORRECTED_SWINGS` (in
+  place_fibs_tradingview.py) is a leftover list of hand-corrected chart
+  anchors. Scoring does not use it today. Never feed it into the scoring
+  path — that would be copying human answers and would fake accuracy.
 
 ---
 
 ## Reproduction protocol (for litmus tests)
 
-A fresh agent reproduces the May-2026 reference run like this:
+A fresh agent proves the engine is context-free like this:
 
 ```bash
 cd ~/project-phoenix-882
@@ -97,17 +122,16 @@ runs = {}
 for line in Path("data/discovery_bet_1/engine_predictions.jsonl").read_text().splitlines():
     r = json.loads(line)
     runs.setdefault(r["run_id"], []).append(r)
-ref, new = runs["2026-05_6c4x_e941_runner"][:11], runs["2026-05_6c4x_e941_runner"][-11:]
+recs = runs["2026-05_6c4x_e941_runner"]
+ref, new = recs[:11], recs[-11:]
 strip = lambda r: {k: v for k, v in r.items() if k != "recorded_at"}
-same = [strip(a) for a in ref] == [strip(b) for b in new]
-print("REPRODUCTION:", "IDENTICAL" if same else "DIVERGED")
+print("REPRODUCTION:", "IDENTICAL" if [strip(a) for a in ref] == [strip(b) for b in new] else "DIVERGED")
 PY
 ```
 
-Expected: 11 predictions, classes in chronological order
-**LOSS · TP3 · TP2 · LOSS · TP1 · LOSS · TP1 · TP1 · TP3 · TP1 · TP1**
-(+7.96R total), byte-identical to the frozen run apart from `recorded_at`.
-The engine has no memory — identity is guaranteed by determinism (D2), not by
-context. If a reproduction DIVERGES, either the data files changed (check the
-CSV last bar) or someone edited the engine (the ground-truth test will be
-red); both are diagnosable, neither is mysterious.
+Expected: 11 predictions, in order **LOSS · TP3 · TP2 · LOSS · TP1 · LOSS ·
+TP1 · TP1 · TP3 · TP1 · TP1** (+7.96R total), identical to the frozen
+reference apart from the timestamp of the run itself. If it ever says
+DIVERGED: either the data files changed (check the CSV's last candle) or the
+engine code changed (the ground-truth test will be failing). Both are
+findable; neither is mysterious.
