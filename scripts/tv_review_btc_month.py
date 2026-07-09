@@ -447,6 +447,10 @@ def main():
                          "zigzag pivot formed past the terminal anchor (PO "
                          "ruling 2026-07-03: an extreme between the anchors "
                          "and the entry invalidates the entry)")
+    ap.add_argument("--max-fill-lag", type=int, default=None,
+                    help="third gate (MISSION axis 5): drop setups where more "
+                         "than N candles elapsed between the terminal anchor "
+                         "and the entry fill")
     ap.add_argument("--min-bars", type=int, default=6,
                     help="detector minimum bars per leg (default 6)")
     ap.add_argument("--mult", type=float, default=2.0,
@@ -520,6 +524,17 @@ def main():
     for leg in legs:
         _annotate_span_depth(leg, idx_map, atr)
         _annotate_outcome(leg, candles, idx_map, subbars=subbars, exec_kwargs=exec_kwargs)
+
+    if args.max_fill_lag is not None:
+        def _lag(l):
+            fi = idx_map.get((l.get("fill_ts") or "")[:13] + ":00:00")
+            ti = idx_map.get(l["term_ts"])
+            return (fi - ti) if (fi is not None and ti is not None) else None
+        n0 = len(legs)
+        legs = [l for l in legs
+                if (_lag(l) is None or _lag(l) <= args.max_fill_lag)]
+        print(f"==> excluded {n0 - len(legs)} setups with fill lag > "
+              f"{args.max_fill_lag} candles after the terminal anchor.")
 
     if args.exclude_stale_fills:
         from scripts.scan_entry_universe import refined_pivots as _rp
@@ -994,6 +1009,7 @@ def main():
                     "entry": args.entry,
                     "exit_plan": args.exit_plan,
                     "universe": args.universe,
+                    "max_fill_lag": args.max_fill_lag,
                     "scored_outcome": leg.get("outcome_kind"),
                     "scored_R": leg.get("outcome_r"),
                 }

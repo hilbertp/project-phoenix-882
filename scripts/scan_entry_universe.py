@@ -180,6 +180,11 @@ def main() -> None:
     ap.add_argument("--min-bars", type=int, default=6)
     ap.add_argument("--mult", type=float, default=4.0)
     ap.add_argument("--exit-plan", choices=["runner", "rest50"], default="runner")
+    ap.add_argument("--max-fill-lag", type=int, default=None,
+                    help="third gate (MISSION axis 5): drop fills where more "
+                         "than N candles elapsed between the terminal anchor "
+                         "and the entry fill. Live-implementable: at fill time "
+                         "the bar index and terminal ts are both known.")
     ap.add_argument("--json", help="write triggered setups per entry to this path")
     args = ap.parse_args()
     lo = f"{args.month}-01T00:00:00"
@@ -234,10 +239,15 @@ def main() -> None:
             fill_i = idx.get(res["events"][0][1][:13] + ":00:00")
             between = [p for p in piv
                        if fill_i is not None and c["term_idx"] < p[0] < fill_i]
+            lag = (fill_i - c["term_idx"]) if fill_i is not None else None
+            if (args.max_fill_lag is not None and lag is not None
+                    and lag > args.max_fill_lag):
+                continue
             trig.append({**c, "status": res["status"],
                          "class": CLS.get(res["status"], res["status"]),
                          "r": round(res["r"], 4),
                          "fill_ts": res["events"][0][1],
+                         "fill_lag": lag,
                          "veto": veto_class(res) == "transition",
                          "stale_fill": bool(between),
                          "pivots_between": len(between),

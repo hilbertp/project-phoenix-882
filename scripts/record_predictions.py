@@ -61,6 +61,9 @@ def main() -> None:
     ap.add_argument("--exclude-stale-fills", action="store_true",
                     help="drop fills with a zigzag pivot between the terminal "
                          "anchor and the entry (run_id gets _nostale suffix)")
+    ap.add_argument("--max-fill-lag", type=int, default=None,
+                    help="third gate: max candles between terminal anchor and "
+                         "entry fill (run_id gets _lagN suffix)")
     args = ap.parse_args()
 
     c1h = load_csv(REPO_ROOT / "data/discovery_bet_1/binance_btcusdt_1h_full_history.csv")
@@ -98,6 +101,8 @@ def main() -> None:
                           min_bars=args.min_bars, mult=args.mult)
     if args.exclude_stale_fills:
         run_id += "_nostale"
+    if args.max_fill_lag is not None:
+        run_id += f"_lag{args.max_fill_lag}"
     legs = [l for l in pool
             if l["term_ts"] in idx and lo <= l["parent_ts"] <= hi]
     n = 0
@@ -106,10 +111,13 @@ def main() -> None:
             res = execute(c1h, idx, leg, subbars=sub5, **exec_kwargs)
             if res["status"] in ("no_entry", "no_trigger", "degenerate"):
                 continue
+            fill_i = idx.get(res["events"][0][1][:13] + ":00:00")
+            ti = idx[leg["term_ts"]]
             if args.exclude_stale_fills:
-                fill_i = idx.get(res["events"][0][1][:13] + ":00:00")
-                ti = idx[leg["term_ts"]]
                 if fill_i is not None and any(ti < p[0] < fill_i for p in zz_piv):
+                    continue
+            if args.max_fill_lag is not None:
+                if fill_i is not None and (fill_i - ti) > args.max_fill_lag:
                     continue
             n += 1
             fh.write(json.dumps({
