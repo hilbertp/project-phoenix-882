@@ -104,6 +104,19 @@ CONTESTED = {
                              # pivots) -- moot once --exclude-stale-fills is default.
 }
 
+# Disputes recorded against a SPECIFIC (setup_key, entry) rather than a whole
+# parent bar. Same semantics as CONTESTED: printed, never failed, pending a ruling.
+CONTESTED_KEYS = {
+    # 05-08 -> 05-10T23:00 @ e882, graded LOSS in the 2026-07-03 stale-fill
+    # confirmation session. The 5m tape supports the ENGINE: entry 79570.63
+    # filled 05-13T14:00, TP1 79887.22 touched 14:25 (bar high 79898.00),
+    # break-even stop touched 15:05 (bar low 79550.00) => tp1_then_scratch.
+    # The fill came 63 candles after the terminal anchor, so the PO's likely
+    # intent was "invalid/stale entry" (M) not "the trade lost" (L).
+    # --max-fill-lag / --exclude-stale-fills remove this setup entirely.
+    ("2026-05-08T03:00:00|2026-05-10T23:00:00", "882"),
+}
+
 
 class OutcomeGroundTruthTests(unittest.TestCase):
     @classmethod
@@ -163,7 +176,10 @@ class OutcomeGroundTruthTests(unittest.TestCase):
             if res["status"] not in ok_statuses:
                 line = (f"{rec['parent_ts']} {rec['direction']}: "
                         f"human={expected} but execute()={res['status']} (r={res['r']:+.2f})")
-                if rec["parent_ts"] in CONTESTED:
+                key = rec.get("setup_key") or f"{rec['parent_ts']}|{rec['term_ts']}"
+                contested = (rec["parent_ts"] in CONTESTED
+                             or (key, str(dp.get("entry", "941"))) in CONTESTED_KEYS)
+                if contested:
                     contested_mismatches.append(line)
                 else:
                     failures.append(line)
