@@ -63,3 +63,32 @@ Validation (untouched): ETH/BNB/XRP/SOL, same window.
   wrong -- iterate exits ONLY via new pre-registration.
 - Cells survive + controls beaten + alts pass: first live candidate;
   proceed to CoinGlass real-liquidation validation and forward freeze.
+
+---
+
+## OUTCOME (recorded 2026-07-11, after computation)
+
+FALSIFIED per the first outcome commitment. Three independent
+implementations agree to the unit.
+
+- P&L: 0 of 8 cells survive hurdles, under BOTH signal readings
+  (first-sweep-per-leg and doc-literal all-sweeps). Best cell
+  Z2/S2/L2 sequential: +0.015..+0.027 R/trade, t~0.2, drop-best
+  negative. No alt validation owed.
+- Mechanism (">= +10pp TP1 bounce vs zone-only"): FAILS on the
+  governing per-signal basis: -5.6pp (NEGATIVE, z=-5.1). Sequential
+  basis +9.93pp -- under the bar.
+- Honest post-hoc observation (exploratory, NOT sealed): the FIRST
+  sweep of a leg does select bouncers (+18.3pp TP1, z=+9.0; terminal
+  reach 12.1% vs 6.8%) -- but re-sweeps dominate the signal count and
+  bounce far less (grinding trends re-sweep and serially stop out).
+  Even on the first-sweep basis all 8 P&L cells fail: the selected
+  bounces (to 0.618) cannot pay for the -1R stops. Mechanism partially
+  real at best; monetization fails everywhere.
+- Control B: removing the zone is catastrophic (-0.46 R/trade,
+  t=-11.5). The deep zone has selection value; nothing built on it
+  has positive expectancy.
+
+Per the commitments: fib-zone trading CLOSES entirely. Remaining
+sanctioned work: Phoenix-Trend v1 (portfolio trend-following) and the
+prospective freeze of the mentor's live setups.
